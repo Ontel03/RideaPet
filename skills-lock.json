@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-behavior-trees-utility-ai": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/ai-behavior-trees-utility-ai/SKILL.md",
+      "computedHash": "b3022db5a3372b5d3752bfb9f67d2dc6cc045d06e860510ceb63130775c20550"
+    },
+    "audio-design": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/audio-design/SKILL.md",
+      "computedHash": "3238c0500fe6ba6d689f4cecc9033aaed54f960aff60b064e91b844ff3765acb"
+    },
+    "camera-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/camera-systems/SKILL.md",
+      "computedHash": "1f44b2163b2100583fe3f82300e759936045393fbefc7c058d3b9a7d1ad7ec85"
+    },
+    "create-game-assets": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/create-game-assets/SKILL.md",
+      "computedHash": "68d5cb83ab462a2a29e77559d9add636fa1fc91d4f732c02b03995362bbc4117"
+    },
+    "dialogue-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/dialogue-systems/SKILL.md",
+      "computedHash": "d42e77a7f92b1178e559761d54dd50b82e6ce4e40dd4a3ccfbb740068fd6f6d3"
+    },
+    "game-ai": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-ai/SKILL.md",
+      "computedHash": "aaf0562a4b8a375af9dbdff7dc489a9f54bb4e2ab2096425a96a5979a8b5e8a8"
+    },
+    "game-feel": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-feel/SKILL.md",
+      "computedHash": "03b9da7e669419e69dfeea8abe0a542e051b2ea1ef8e18cd8a39cb32855416b3"
+    },
+    "game-ui-ux": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/game-ui-ux/SKILL.md",
+      "computedHash": "4aeb677be89029728154d40bb1d98e07d809f019ff8cd0e9188fb4a1f9d51255"
+    },
+    "input-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/input-systems/SKILL.md",
+      "computedHash": "c9609575811a55c267851db018c27e29a3b2bd0a8da09462ef3a8b154c5e9b33"
+    },
+    "level-design": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/level-design/SKILL.md",
+      "computedHash": "30d5498877bacdfb4cb0fd2b287be802e65c4a1d068248c971b0eea756778ee9"
+    },
+    "luau-expert": {
+      "source": "afrxo/roblox-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/luau-expert/SKILL.md",
+      "computedHash": "5d32f987d5b48b4da85d7c99e1f0bfa553a905b73963a52cd3d6f96cbae56943"
+    },
+    "performance-optimization": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/performance-optimization/SKILL.md",
+      "computedHash": "9788da8674ddd2c5a895dad3a1ba54e815d3843060ad01366a5354c39f0ecde4"
+    },
+    "physics-tuning": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/physics-tuning/SKILL.md",
+      "computedHash": "69b3297e108853df60a23e9ce5528950a5d0d7057de2f0a2bc60a66129b642f0"
+    },
+    "procedural-gen": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/procedural-gen/SKILL.md",
+      "computedHash": "a66b0ec9c81bdefd6829d3386aac61d9b34fc1d3c99cd160354043e23e434f2d"
+    },
+    "roblox-characters": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-characters/SKILL.md",
+      "computedHash": "55b9a97155901ec42124576aa1adf1d91d4340915cbad4736443532d6cf7f793"
+    },
+    "roblox-datastores": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-datastores/SKILL.md",
+      "computedHash": "34a35abe5dffc598aced99d817c2ca54c9d5bd3ee19bf23229857469129ba83c"
+    },
+    "roblox-dev": {
+      "source": "afrxo/roblox-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/roblox-dev/SKILL.md",
+      "computedHash": "bc661a4be539788534d38d1a46db5c49681617ed41822bce286ad3e5edd8357d"
+    },
+    "roblox-docs": {
+      "source": "zilibobi/roblox-skills",
+      "sourceType": "github",
+      "skillPath": "skills/roblox-docs/SKILL.md",
+      "computedHash": "4c8c724a6310b8423700fbdfce4436e5be389f400fae39938342e8065abef4d0"
+    },
+    "roblox-luau": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-luau/SKILL.md",
+      "computedHash": "94971c76090f812ba5faf5819257ec8b1bc4881b2092c239a4686b127defcb30"
+    },
+    "roblox-networking": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-networking/SKILL.md",
+      "computedHash": "bc480380aba9f4cee748a5ff1e6496e904a4d5a81245558e216d13da6be633f0"
+    },
+    "roblox-physics": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-physics/SKILL.md",
+      "computedHash": "16e1444b4c286b089d95101e16c4d88f77acb97e92ecd8048953e56ed0e0b195"
+    },
+    "roblox-studio-workflow": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-studio-workflow/SKILL.md",
+      "computedHash": "17f4707b370ef4bab9ff40843670405fae7ae2b8b9ea429d18c3d94ea6dbc66e"
+    },
+    "roblox-toolchain": {
+      "source": "afrxo/roblox-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/roblox-toolchain/SKILL.md",
+      "computedHash": "e8afbb180cb29b5d8b1e24ac6e03b0a3419ed80419500b10b6b3072b756516d6"
+    },
+    "roblox-ui": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/other-engines/roblox-ui/SKILL.md",
+      "computedHash": "34aed78d5ed73b71126ad8485c008f1b3345c9649d1b4c8ca996bdaa8695e8c4"
+    },
+    "save-systems": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/save-systems/SKILL.md",
+      "computedHash": "ee4c0bf8fac8e9aa5fc109d0e18331d846e2146d521849c636ca065627eacd47"
+    },
+    "shader-programming": {
+      "source": "gamedev-skills/awesome-gamedev-agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/disciplines/shader-programming/SKILL.md",
+      "computedHash": "19fbb1bc4715179388a9c8fcf92f2534cb821f655ca76120c19f3c6bb86de4bf"
+    }
+  }
+}
