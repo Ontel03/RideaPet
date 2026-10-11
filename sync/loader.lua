@@ -16,7 +16,6 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local TweenService = game:GetService("TweenService")
 local CoreGui = game:GetService("CoreGui")
 
 -- Config (self-contained, no external dependency)
@@ -48,6 +47,108 @@ function Stats.format() return ("Collected %d  ·  Laps %d"):format(Stats.collec
 
 -- Pickup state
 local PickupState = { remote = nil, shape = nil, candidates = 0, scanned = 0 }
+
+-- UI Setup (simple panel, no TweenService to avoid executor errors)
+local function createUI()
+	local ScreenGui = Instance.new("ScreenGui")
+	ScreenGui.Name = "CandyFarmUI"
+	ScreenGui.ResetOnSpawn = false
+
+	-- Try CoreGui, fallback to PlayerGui
+	local guiParent = CoreGui
+	pcall(function() guiParent = Players.LocalPlayer:WaitForChild("PlayerGui") end)
+
+	ScreenGui.Parent = guiParent
+
+	-- Main Frame
+	local frame = Instance.new("Frame")
+	frame.Name = "MainFrame"
+	frame.Size = UDim2.new(0, 200, 0, 120)
+	frame.Position = UDim2.new(0, 10, 0, 10)
+	frame.BackgroundColor3 = Color3.fromRGB(38, 32, 51)
+	frame.BackgroundTransparency = 0.1
+	frame.Parent = ScreenGui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = frame
+
+	-- Title
+	local title = Instance.new("TextLabel")
+	title.Name = "Title"
+	title.Size = UDim2.new(1, 0, 0, 30)
+	title.BackgroundTransparency = 1
+	title.Font = Enum.Font.GothamBold
+	title.TextSize = 14
+	title.TextColor3 = Color3.fromRGB(233, 229, 240)
+	title.Text = "Candy Farm Panel"
+	title.Parent = frame
+
+-- Status Display
+	local status = Instance.new("TextLabel")
+	status.Name = "Status"
+	status.Size = UDim2.new(1, 0, 0, 25)
+	status.Position = UDim2.new(0, 0, 0, 35)
+	status.BackgroundTransparency = 1
+	status.Font = Enum.Font.Gotham
+	status.TextSize = 12
+	status.TextColor3 = Color3.fromRGB(33, 133, 84) -- green default
+	status.Text = "Status: Stopped"
+	status.Parent = frame
+
+-- Stats Display
+	local stats = Instance.new("TextLabel")
+	stats.Name = "Stats"
+	stats.Size = UDim2.new(1, 0, 0, 25)
+	stats.Position = UDim2.new(0, 0, 0, 65)
+	stats.BackgroundTransparency = 1
+	stats.Font = Enum.Font.Gotham
+	stats.TextSize = 12
+	stats.TextColor3 = Color3.fromRGB(170, 164, 188)
+	stats.Text = Stats.format()
+	stats.Parent = frame
+
+-- Toggle Button
+	local toggleBtn = Instance.new("TextButton")
+	toggleBtn.Name = "ToggleBtn"
+	toggleBtn.Size = UDim2.new(1, -20, 0, 30)
+	toggleBtn.Position = UDim2.new(0, 10, 0, 95)
+	toggleBtn.BackgroundColor3 = Color3.fromRGB(28, 16, 6)
+	toggleBtn.Font = Enum.Font.GothamMedium
+	toggleBtn.TextSize = 12
+	toggleBtn.TextColor3 = Color3.fromRGB(233, 229, 240)
+	toggleBtn.Text = "Start Farm"
+	toggleBtn.Parent = frame
+	local btnCorner = Instance.new("UICorner")
+	btnCorner.CornerRadius = UDim.new(0, 6)
+	btnCorner.Parent = toggleBtn
+
+-- Toggle functionality
+	local farmConnection
+	toggleBtn.MouseButton1Click:Connect(function()
+		Config.running = not Config.running
+		if Config.running then
+			toggleBtn.Text = "Stop Farm"
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(33, 133, 84)
+			status.Text = "Status: Running"
+			status.TextColor3 = Color3.fromRGB(33, 133, 84)
+			-- Print confirmation
+			print("[CandyFarm] Farm started via UI toggle")
+		else
+			toggleBtn.Text = "Start Farm"
+			toggleBtn.BackgroundColor3 = Color3.fromRGB(28, 16, 6)
+			status.Text = "Status: Stopped"
+			status.TextColor3 = Color3.fromRGB(170, 164, 188)
+			-- Print confirmation
+			print("[CandyFarm] Farm stopped via UI toggle")
+		end
+	end)
+
+-- Print UI init message
+print("[CandyFarm] UI Panel created. Use the button to Start/Stop farm.")
+end
+
+-- Run UI setup
+createUI()
 
 -- Helpers
 local function getWorldPosition(object)
@@ -243,4 +344,4 @@ task.spawn(function()
 	discoverRemote()
 end)
 
-print("[CandyFarm] Loader started. Probing remotes...")
+print("[CandyFarm] Loader started. Probing remotes... Use the UI button to Start/Stop farm.")
