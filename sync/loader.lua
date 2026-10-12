@@ -33,7 +33,7 @@ local Config = {
 		"candy", "sweet", "pick", "collect", "take", "grab", "drop",
 		"submit", "reward", "item", "bag", "trick", "treat", "halloween", "ghost",
 	},
-	denyKeywords = { "buy", "shop", "purchase", "trade", "auction" },
+	denyKeywords = { "buy", "shop", "purchase", "trade", "auction", "get", "request", "state", "status", "config", "data", "info", "sync", "update", "receive", "listen", "open" },
 }
 
 local SHAPES = { "none", "candy", "pad+candy", "candy+player", "candy+pad+player" }
@@ -338,10 +338,24 @@ local function discoverPickupRemote(candidates)
 			local sent = pcall(fire, remote, shape, target, pad)
 			task.wait(Config.probeDelay)
 
-			if not target.Parent then
-				return remote, shape
-			elseif not sent then
+			if not sent then
 				break
+			end
+
+			if not target.Parent then
+				-- A single success can be a candy that despawned on its own. Confirm the
+				-- same remote collects a second candy before trusting it.
+				local after = folder:GetChildren()
+				if #after == 0 then
+					return nil
+				end
+
+				local confirm = after[1]
+				pcall(fire, remote, shape, confirm, pad)
+				task.wait(Config.probeDelay)
+				if not confirm.Parent then
+					return remote, shape
+				end
 			end
 		end
 	end
@@ -376,12 +390,23 @@ local function runCandyCycle(candy, position)
 			task.wait(Config.afterPadDelay)
 		end
 
+		-- Only count a remote pickup when the candy actually leaves the folder. A remote
+		-- that fires without error is not proof of a collection.
 		task.wait(Config.arriveDelay)
-		if sendPickup(candy, getDropOffPad() or candy) then
-			stats.collected = stats.collected + 1
+		local pad = getDropOffPad()
+		if sendPickup(candy.instance, pad or candy.instance) then
+			-- Give the server a moment to remove the candy before judging the result.
+			task.wait(Config.probeDelay)
+			if not candy.instance.Parent then
+				stats.collected = stats.collected + 1
+				finishCycle(startedAt, Config.cycleLength)
+				return
+			end
 		end
-		finishCycle(startedAt, Config.cycleLength)
-		return
+
+		-- Remote did not collect it; stop trusting it and let the other paths try.
+		pickup.remote = nil
+		print("[farm] pickup remote stopped collecting, falling back")
 	end
 
 	-- Prompt path: stand inside activation range, fire, and confirm the candy left.
