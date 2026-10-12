@@ -1,5 +1,5 @@
--- The egg shop needs its prompt opened first, and the drop-off is a zone rather than a
--- part. Reports both structures and retries the purchase after opening the prompt.
+-- No ProximityPrompt exists, so the shop UI must be opened by a remote. Tests
+-- OpenHalloween before the purchase, plus a ClickDetector fallback.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -16,36 +16,22 @@ local function findRemote(name)
 	return nil
 end
 
-local shop, prompt, bounds, anchor
-for _, descendant in ipairs(workspace:GetDescendants()) do
-	if descendant.Name == "HalloweenEggShop" then shop = descendant end
-	if descendant.Name == "HalloweenDropOffZoneBounds" then bounds = descendant end
-	if descendant.Name == "HalloweenHomeAnchor" then anchor = descendant end
-end
-for _, descendant in ipairs((shop or workspace):GetDescendants()) do
-	if descendant:IsA("ProximityPrompt") then prompt = descendant end
-end
-
-print("shop=" .. tostring(shop and shop:GetFullName()))
-print("prompt=" .. tostring(prompt and prompt.Name) .. " parent=" .. tostring(prompt and prompt.Parent:GetFullName()))
-print("bounds=" .. tostring(bounds and bounds.ClassName))
-print("anchor=" .. tostring(anchor and anchor.ClassName))
-
-if bounds then
-	for attribute, value in pairs(bounds:GetAttributes()) do
-		print("  bounds." .. attribute .. " = " .. tostring(value))
-	end
-end
-
+local shop = workspace:FindFirstChild("HalloweenEggShop")
+local anchor = shop and shop:FindFirstChild("HalloweenHomeAnchor")
 local buy = findRemote("BuyHalloweenEgg")
+local open = findRemote("OpenHalloween")
+local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 local saved = player:FindFirstChild("SavedData")
 local holder = saved and saved:FindFirstChild("HalloweenCandy")
-local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 
-local target = anchor or (shop and shop:FindFirstChildWhichIsA("BasePart"))
-if not (buy and target and rootPart) then
-	print("STOP: tidak ada remote / titik acuan")
-	return
+print("OpenHalloween = " .. tostring(open and open.ClassName))
+print("BuyHalloweenEgg = " .. tostring(buy and buy.ClassName))
+
+-- Any click detector on the shop parts?
+for _, descendant in ipairs((shop or workspace):GetDescendants()) do
+	if descendant:IsA("ClickDetector") then
+		print("ClickDetector: " .. descendant:GetFullName())
+	end
 end
 
 local function attempt(label)
@@ -58,18 +44,30 @@ local function attempt(label)
 		tostring(before), tostring(holder and holder.Value)))
 end
 
--- Stand at the shop, then try without opening anything.
-rootPart.CFrame = CFrame.new(target.Position + Vector3.new(0, 3, 0))
-task.wait(1)
-attempt("dariPosisi")
+if not (buy and anchor and rootPart) then
+	print("STOP: remote atau anchor tidak ada")
+	return
+end
 
--- Open the shop prompt, then try again.
-if prompt then
-	pcall(function()
-		prompt.HoldDuration = 0
-		prompt:InputHoldBegin()
-		prompt:InputHoldEnd()
-	end)
+rootPart.CFrame = CFrame.new(anchor.Position + Vector3.new(0, 2, 0))
+task.wait(1)
+
+if open then
+	if open:IsA("RemoteFunction") then
+		pcall(function() open:InvokeServer() end)
+	else
+		open:FireServer()
+	end
 	task.wait(2)
-	attempt("setelahPrompt")
+	attempt("setelahOpenHalloween")
+
+	-- The UI may expect a second call to confirm the selection.
+	local ok, reply = pcall(function()
+		return buy:InvokeServer(anchor)
+	end)
+	task.wait(1)
+	print("buy(anchor) ok=" .. tostring(ok) .. " reply=" .. tostring(reply)
+		.. " candy=" .. tostring(holder and holder.Value))
+else
+	attempt("tanpaOpen")
 end
