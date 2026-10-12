@@ -22,7 +22,8 @@ local Config = {
 	useRemotePickup = true,
 	standOnPad = false,
 	highestValueFirst = true,
-	keyHold = 0.5,
+	local keyHold = 0.5,
+	keyTap = 0.12,
 	arriveDelay = 0.5,
 	afterPickupDelay = 3.5,
 	afterPadDelay = 1.5,
@@ -102,13 +103,72 @@ local function teleportTo(position)
 	end)
 end
 
-local function holdPickupKey()
-	pcall(function()
-		VirtualInputManager:SendKeyEvent(true, PICKUP_KEY, false, game)
+-- Documented input path (UserInputService:CreateVirtualInput). Returns nil when the
+-- feature is unavailable, which is normal on many executors.
+local virtualInput = nil
+do
+	local ok, created = pcall(function()
+		return UserInputService:CreateVirtualInput()
 	end)
-	task.wait(Config.keyHold)
-	pcall(function()
-		VirtualInputManager:SendKeyEvent(false, PICKUP_KEY, false, game)
+	if ok and created then
+		virtualInput = created
+	end
+end
+
+-- Presses and releases a key through whichever input path this client exposes.
+-- Returns which path was used, so the console can report what actually works.
+local function pressKey(keyCode, holdSeconds)
+	local duration = holdSeconds or Config.keyTap
+
+	if virtualInput then
+		local ok = pcall(function()
+			virtualInput:SendKey(true, keyCode, false)
+			task.wait(duration)
+			virtualInput:SendKey(false, keyCode, false)
+		end)
+		if ok then
+			return "virtual"
+		end
+	end
+
+	local ok = pcall(function()
+		VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+		task.wait(duration)
+		VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+	end)
+	if ok then
+		return "vim"
+	end
+
+	return nil
+end
+
+-- Reports the available input path once, so a silent failure is diagnosable.
+local inputPathReported = false
+local function reportInputPath(path)
+	if inputPathReported then
+		return
+	end
+	inputPathReported = true
+	print("[farm] input path:", path == "virtual" and "VirtualInput (documented)"
+		or path == "vim" and "VirtualInputManager (internal)"
+		or "none")
+end
+
+-- A tap rather than a sustained hold: games that listen for a keypress fire immediately.
+local function tapPickupKey()
+	local path = pressKey(PICKUP_KEY, Config.keyTap)
+	reportInputPath(path)
+	return path
+end
+
+-- Roblox force-disconnects a player after roughly 20 minutes of no activity. There is
+-- no documented way to reset that timer, so a harmless modifier keypress is fed through
+-- the same input pipeline real activity uses.
+do
+	local keepAliveKey = Enum.KeyCode.LeftShift
+	player.Idled:Connect(function()
+		pressKey(keepAliveKey, 0.05)
 	end)
 end
 
@@ -349,10 +409,21 @@ local function runCandyCycle(candy, position)
 		end
 	end
 
-	-- Key fallback: sit next to the candy and hold the pickup key.
+	-- Key fallback: sit next to the candy and tap the pickup key until it registers.
 	teleportTo(position + CANDY_HOVER)
-	task.wait(Config.arriveDelay)
-	holdPickupKey()
+	for attempt = 1, Config.pickupAttempts do
+		task.wait(Config.arriveDelay)
+		tapPickupKey()
+		task.wait(Config.keyTap + Config.arriveDelay)
+		if not candy.instance.Parent then
+			break
+		end
+	end
+
+	if candy.instance.Parent then
+		return
+	end
+
 	stats.collected = stats.collected + 1
 	task.wait(Config.afterPickupDelay)
 
@@ -992,7 +1063,7 @@ local function readouts()
 		firstLine = ("Waiting for candies in workspace.%s"):format(CANDY_FOLDER)
 	end
 
-	local timing = ("Hold %s %.1fs · %.1fs per candy"):format(PICKUP_KEY.Name, Config.keyHold, Config.cycleLength)
+	local timing = ("Tap %s %.2fs · %.1fs per candy"):format(PICKUP_KEY.Name, Config.keyTap, Config.cycleLength)
 	local statsText = ("Collected %d  ·  Laps %d"):format(stats.collected, stats.laps)
 	return firstLine .. "\n" .. timing, statsText
 end
