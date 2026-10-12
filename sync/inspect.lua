@@ -1,5 +1,5 @@
--- No ProximityPrompt exists, so the shop UI must be opened by a remote. Tests
--- OpenHalloween before the purchase, plus a ClickDetector fallback.
+-- Sweeps many call shapes for BuyHalloweenEgg from the shop anchor. OpenHalloween does
+-- not exist, so the purchase must be reachable directly.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -17,57 +17,53 @@ local function findRemote(name)
 end
 
 local shop = workspace:FindFirstChild("HalloweenEggShop")
-local anchor = shop and shop:FindFirstChild("HalloweenHomeAnchor")
+local anchor
+if shop then
+	for _, descendant in ipairs(shop:GetDescendants()) do
+		if descendant.Name == "HalloweenHomeAnchor" then anchor = descendant end
+	end
+end
+
 local buy = findRemote("BuyHalloweenEgg")
-local open = findRemote("OpenHalloween")
 local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 local saved = player:FindFirstChild("SavedData")
 local holder = saved and saved:FindFirstChild("HalloweenCandy")
 
-print("OpenHalloween = " .. tostring(open and open.ClassName))
-print("BuyHalloweenEgg = " .. tostring(buy and buy.ClassName))
+print("anchor=" .. tostring(anchor and anchor:GetFullName()))
+print("buy=" .. tostring(buy and buy.ClassName))
 
--- Any click detector on the shop parts?
-for _, descendant in ipairs((shop or workspace):GetDescendants()) do
-	if descendant:IsA("ClickDetector") then
-		print("ClickDetector: " .. descendant:GetFullName())
+if saved then
+	for _, child in ipairs(saved:GetChildren()) do
+		if child:IsA("NumberValue") or child:IsA("IntValue") or child:IsA("StringValue") or child:IsA("BoolValue") then
+			print("  SavedData." .. child.Name .. " = " .. tostring(child.Value))
+		end
 	end
 end
 
-local function attempt(label)
-	local before = holder and holder.Value
-	local ok, reply = pcall(function()
-		return buy:InvokeServer()
-	end)
-	task.wait(1)
-	print(string.format("%s ok=%s reply=%s candy %s -> %s", label, tostring(ok), tostring(reply),
-		tostring(before), tostring(holder and holder.Value)))
-end
-
 if not (buy and anchor and rootPart) then
-	print("STOP: remote atau anchor tidak ada")
+	print("STOP: ada yang null")
 	return
 end
 
 rootPart.CFrame = CFrame.new(anchor.Position + Vector3.new(0, 2, 0))
 task.wait(1)
 
-if open then
-	if open:IsA("RemoteFunction") then
-		pcall(function() open:InvokeServer() end)
-	else
-		open:FireServer()
-	end
-	task.wait(2)
-	attempt("setelahOpenHalloween")
+local shapes = {
+	{ "noargs", function() return buy:InvokeServer() end },
+	{ "anchor", function() return buy:InvokeServer(anchor) end },
+	{ "shop", function() return buy:InvokeServer(shop) end },
+	{ "'Halloween'", function() return buy:InvokeServer("Halloween") end },
+	{ "'HalloweenEgg'", function() return buy:InvokeServer("HalloweenEgg") end },
+	{ "'Egg'", function() return buy:InvokeServer("Egg") end },
+	{ "true", function() return buy:InvokeServer(true) end },
+	{ "1,true", function() return buy:InvokeServer(1, true) end },
+}
 
-	-- The UI may expect a second call to confirm the selection.
-	local ok, reply = pcall(function()
-		return buy:InvokeServer(anchor)
-	end)
-	task.wait(1)
-	print("buy(anchor) ok=" .. tostring(ok) .. " reply=" .. tostring(reply)
-		.. " candy=" .. tostring(holder and holder.Value))
-else
-	attempt("tanpaOpen")
+for _, shape in ipairs(shapes) do
+	local before = holder and holder.Value
+	local ok, reply = pcall(shape[2])
+	task.wait(0.8)
+	local after = holder and holder.Value
+	print(string.format("%s ok=%s reply=%s candy %s -> %s", shape[1], tostring(ok),
+		tostring(reply), tostring(before), tostring(after)))
 end
