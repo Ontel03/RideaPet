@@ -1,5 +1,5 @@
--- Tries BuyHalloweenEgg from the NPC position, and reports the full player state the
--- server might be checking.
+-- The egg shop needs its prompt opened first, and the drop-off is a zone rather than a
+-- part. Reports both structures and retries the purchase after opening the prompt.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -16,54 +16,60 @@ local function findRemote(name)
 	return nil
 end
 
--- Locate the egg NPC.
-local npcPart
+local shop, prompt, bounds, anchor
 for _, descendant in ipairs(workspace:GetDescendants()) do
-	if descendant:IsA("BasePart") and (descendant.Name:find("Egg") or descendant.Name:find("NPC") or descendant.Name:find("Shop")) then
-		npcPart = descendant
-		print("NPC candidate: " .. descendant:GetFullName())
-		break
-	end
+	if descendant.Name == "HalloweenEggShop" then shop = descendant end
+	if descendant.Name == "HalloweenDropOffZoneBounds" then bounds = descendant end
+	if descendant.Name == "HalloweenHomeAnchor" then anchor = descendant end
+end
+for _, descendant in ipairs((shop or workspace):GetDescendants()) do
+	if descendant:IsA("ProximityPrompt") then prompt = descendant end
 end
 
--- Report the saved-data state the server may check.
-local saved = player:FindFirstChild("SavedData")
-if saved then
-	for _, child in ipairs(saved:GetChildren()) do
-		if child:IsA("NumberValue") or child:IsA("IntValue") or child:IsA("StringValue") then
-			print("SavedData." .. child.Name .. " = " .. tostring(child.Value))
-		end
-	end
-end
+print("shop=" .. tostring(shop and shop:GetFullName()))
+print("prompt=" .. tostring(prompt and prompt.Name) .. " parent=" .. tostring(prompt and prompt.Parent:GetFullName()))
+print("bounds=" .. tostring(bounds and bounds.ClassName))
+print("anchor=" .. tostring(anchor and anchor.ClassName))
 
-local noSave = player:FindFirstChild("NoSaveData")
-if noSave then
-	for _, child in ipairs(noSave:GetChildren()) do
-		if child:IsA("NumberValue") or child:IsA("IntValue") or child:IsA("StringValue") then
-			print("NoSaveData." .. child.Name .. " = " .. tostring(child.Value))
-		end
+if bounds then
+	for attribute, value in pairs(bounds:GetAttributes()) do
+		print("  bounds." .. attribute .. " = " .. tostring(value))
 	end
 end
 
 local buy = findRemote("BuyHalloweenEgg")
-local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+local saved = player:FindFirstChild("SavedData")
 local holder = saved and saved:FindFirstChild("HalloweenCandy")
-local before = holder and holder.Value
+local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 
--- Try from the NPC first, then from the pad.
-for _, target in ipairs({ npcPart, workspace:FindFirstChild("CandyDropOff") }) do
-	if target and rootPart then
-		local part = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart")
-		if part then
-			rootPart.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
-			task.wait(1)
-			local ok, reply = pcall(function()
-				return buy:InvokeServer()
-			end)
-			task.wait(1)
-			print(string.format("from %s ok=%s reply=%s candy %s -> %s",
-				part.Name, tostring(ok), tostring(reply),
-				tostring(before), tostring(holder and holder.Value)))
-		end
-	end
+local target = anchor or (shop and shop:FindFirstChildWhichIsA("BasePart"))
+if not (buy and target and rootPart) then
+	print("STOP: tidak ada remote / titik acuan")
+	return
+end
+
+local function attempt(label)
+	local before = holder and holder.Value
+	local ok, reply = pcall(function()
+		return buy:InvokeServer()
+	end)
+	task.wait(1)
+	print(string.format("%s ok=%s reply=%s candy %s -> %s", label, tostring(ok), tostring(reply),
+		tostring(before), tostring(holder and holder.Value)))
+end
+
+-- Stand at the shop, then try without opening anything.
+rootPart.CFrame = CFrame.new(target.Position + Vector3.new(0, 3, 0))
+task.wait(1)
+attempt("dariPosisi")
+
+-- Open the shop prompt, then try again.
+if prompt then
+	pcall(function()
+		prompt.HoldDuration = 0
+		prompt:InputHoldBegin()
+		prompt:InputHoldEnd()
+	end)
+	task.wait(2)
+	attempt("setelahPrompt")
 end
