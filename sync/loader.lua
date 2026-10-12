@@ -22,7 +22,6 @@ local Config = {
 	useRemotePickup = true,
 	standOnPad = false,
 	highestValueFirst = true,
-	local keyHold = 0.5,
 	keyTap = 0.12,
 	arriveDelay = 0.5,
 	afterPickupDelay = 3.5,
