@@ -30,8 +30,8 @@ local Config = {
 	-- The pad is shared with egg deliveries, so both cooldowns guard "Egg Delivery Failed".
 	deliverDelay = 1.5,
 	afterDepositDelay = 2.0,
-	depositAttempts = 4,
-	depositWaitSteps = 8,
+	depositAttempts = 3,
+	depositWaitSteps = 10,
 	depositWaitStep = 0.25,
 	cycleLength = 6.0,
 	probeDelay = 0.4,
@@ -288,15 +288,9 @@ local function finishCycle(startedAt, cycleLength)
 	end
 end
 
--- Carries the collected candy to the drop-off and hands it in. Each attempt waits for the
--- server to confirm with HalloweenCandyDeposited, so a rejected drop is retried from the
--- pad instead of silently moving on. The pad is shared with egg deliveries, hence the
--- cooldowns before leaving and after handing in.
+-- The pad detects the carried candy by proximity, so standing on it is enough. DropCandy
+-- only fires if nothing registers, which happens when the pad needs an explicit hand-in.
 local function depositAtDropOff(depositRemote, startedAt)
-	if not depositRemote then
-		return false
-	end
-
 	local pad = getDropOffPad()
 	if not pad then
 		return false
@@ -309,15 +303,13 @@ local function depositAtDropOff(depositRemote, startedAt)
 
 	task.wait(Config.deliverDelay)
 
-	teleportTo(padPosition + PAD_HOVER)
-	task.wait(Config.arriveDelay)
-
 	local deposited = false
 	for attempt = 1, Config.depositAttempts do
-		local before = depositReceipts
-		fireRemote(depositRemote)
+		teleportTo(padPosition + PAD_HOVER)
 
-		-- Wait for the server receipt instead of assuming the drop landed.
+		local before = depositReceipts
+
+		-- Hold position and let the pad pick the candy up on its own.
 		for waited = 1, Config.depositWaitSteps do
 			task.wait(Config.depositWaitStep)
 			if depositReceipts > before then
@@ -330,9 +322,21 @@ local function depositAtDropOff(depositRemote, startedAt)
 			break
 		end
 
-		-- Stay on the pad and try again; the drop is rejected when the position is stale.
-		teleportTo(padPosition + PAD_HOVER)
-		task.wait(Config.arriveDelay)
+		-- Nothing registered: fall back to handing it over explicitly.
+		if depositRemote then
+			fireRemote(depositRemote)
+			for waited = 1, Config.depositWaitSteps do
+				task.wait(Config.depositWaitStep)
+				if depositReceipts > before then
+					deposited = true
+					break
+				end
+			end
+		end
+
+		if deposited then
+			break
+		end
 	end
 
 	if deposited then
@@ -346,11 +350,10 @@ local function depositAtDropOff(depositRemote, startedAt)
 	return deposited
 end
 
--- Collects one candy, then deposits it at the drop-off. Both steps are verified by
--- watching the folder, so a silent failure never counts as a pickup.
+-- Collects one candy by its SpawnId, then walks it to the drop-off. Both steps are
+-- verified against the server, so a silent failure never counts as a pickup.
 local function runCandyCycle(candy, position)
 	local startedAt = os.clock()
-	local folder = getCandyFolder()
 	local collectRemote, depositRemote = pickup.collect, pickup.deposit
 
 	if collectRemote then
