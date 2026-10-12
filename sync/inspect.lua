@@ -1,9 +1,28 @@
--- Watches one candy through a CollectCandy call and reports what actually happened to
--- it: destroyed, reparented, or untouched.
+-- Listens to server replies instead of hooking methods (Roblox blocks property writes
+-- on Instances). Reports both what the server sends back and what happens to the candy.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
+
+local replies = {}
+for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
+	for _, remote in ipairs(container:GetDescendants()) do
+		if (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) and remote.Name:find("Candy") then
+			remote.OnClientEvent:Connect(function(...)
+				local parts = {}
+				for index = 1, select("#", ...) do
+					local value = select(index, ...)
+					parts[index] = type(value) == "Instance" and ("<" .. value.Name .. ">") or tostring(value)
+				end
+				local line = "[reply] " .. remote.Name .. " " .. table.concat(parts, ", ")
+				replies[#replies + 1] = line
+				print(line)
+			end)
+		end
+	end
+end
+print("listening")
 
 local function findRemote(name)
 	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
@@ -16,36 +35,12 @@ local function findRemote(name)
 	return nil
 end
 
--- Log anything the game itself sends, so a manual pickup can be copied later.
-local armed = {}
-for _, container in ipairs({ ReplicatedStorage }) do
-	for _, remote in ipairs(container:GetDescendants()) do
-		if (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) and remote.Name:find("Candy") then
-			armed[#armed + 1] = remote.Name
-			for _, method in ipairs({ "FireServer", "InvokeServer" }) do
-				local original = remote[method]
-				remote[method] = function(self, ...)
-					local parts = {}
-					for index = 1, select("#", ...) do
-						local value = select(index, ...)
-						parts[index] = type(value) == "Instance" and ("<" .. value.ClassName .. ":" .. value:GetFullName() .. ">")
-							or tostring(value)
-					end
-					print("[hook] " .. remote.Name .. ":" .. method .. " " .. table.concat(parts, ", "))
-					return original(self, ...)
-				end
-			end
-		end
-	end
-end
-print("hooked: " .. table.concat(armed, ", "))
-
 local collect = findRemote("CollectCandy")
 local folder = workspace:FindFirstChild("HalloweenCandy")
 local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
 
 if not collect or not folder or #folder:GetChildren() == 0 then
-	print("gak ada candy / remote")
+	print("tidak ada candy atau remote")
 	return
 end
 
@@ -56,7 +51,7 @@ if part and rootPart then
 end
 
 task.wait(1)
-print("before: parent=" .. tostring(target.Parent and target.Parent:GetFullName()) .. " inFolder=" .. tostring(target.Parent == folder))
+print("before parent=" .. tostring(target.Parent and target.Parent:GetFullName()) .. " count=" .. tostring(#folder:GetChildren()))
 
 pcall(function()
 	if collect:IsA("RemoteFunction") then
@@ -67,5 +62,5 @@ pcall(function()
 end)
 
 task.wait(2)
-print("after: parent=" .. tostring(target.Parent and target.Parent:GetFullName()) .. " inFolder=" .. tostring(target.Parent == folder))
-print("count now: " .. tostring(#folder:GetChildren()))
+print("after parent=" .. tostring(target.Parent and target.Parent:GetFullName()) .. " count=" .. tostring(#folder:GetChildren()))
+print("replies=" .. tostring(#replies))
