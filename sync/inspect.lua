@@ -1,4 +1,5 @@
--- Walks the whole auto-buy chain and reports where it breaks.
+-- Tries BuyHalloweenEgg from the NPC position, and reports the full player state the
+-- server might be checking.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
@@ -15,37 +16,54 @@ local function findRemote(name)
 	return nil
 end
 
--- 1. Candy total, the same way the loader reads it.
+-- Locate the egg NPC.
+local npcPart
+for _, descendant in ipairs(workspace:GetDescendants()) do
+	if descendant:IsA("BasePart") and (descendant.Name:find("Egg") or descendant.Name:find("NPC") or descendant.Name:find("Shop")) then
+		npcPart = descendant
+		print("NPC candidate: " .. descendant:GetFullName())
+		break
+	end
+end
+
+-- Report the saved-data state the server may check.
 local saved = player:FindFirstChild("SavedData")
-print("SavedData = " .. tostring(saved and saved:GetFullName()))
-local holder = saved and saved:FindFirstChild("HalloweenCandy")
-print("HalloweenCandy = " .. tostring(holder and holder:GetFullName()) .. " class=" .. tostring(holder and holder.ClassName))
-if holder then
-	print("  value = " .. tostring(holder.Value) .. "  type=" .. type(holder.Value))
+if saved then
+	for _, child in ipairs(saved:GetChildren()) do
+		if child:IsA("NumberValue") or child:IsA("IntValue") or child:IsA("StringValue") then
+			print("SavedData." .. child.Name .. " = " .. tostring(child.Value))
+		end
+	end
 end
 
--- 2. The egg remote.
+local noSave = player:FindFirstChild("NoSaveData")
+if noSave then
+	for _, child in ipairs(noSave:GetChildren()) do
+		if child:IsA("NumberValue") or child:IsA("IntValue") or child:IsA("StringValue") then
+			print("NoSaveData." .. child.Name .. " = " .. tostring(child.Value))
+		end
+	end
+end
+
 local buy = findRemote("BuyHalloweenEgg")
-print("BuyHalloweenEgg = " .. tostring(buy and buy.ClassName))
+local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+local holder = saved and saved:FindFirstChild("HalloweenCandy")
+local before = holder and holder.Value
 
-if not buy or not holder then
-	print("STOP: salah satu remote/variable tidak ada")
-	return
-end
-
--- 3. Try the call shapes and read each verdict.
-local shapes = {
-	{ "noargs", function() return buy:InvokeServer() end },
-	{ "true", function() return buy:InvokeServer(true) end },
-	{ "1", function() return buy:InvokeServer(1) end },
-	{ "auto", function() return buy:InvokeServer("auto") end },
-}
-
-for _, shape in ipairs(shapes) do
-	local before = holder.Value
-	local ok, reply = pcall(shape[2])
-	task.wait(1)
-	local after = holder.Value
-	print(string.format("%s ok=%s reply=%s candy %s -> %s", shape[1], tostring(ok),
-		tostring(reply), tostring(before), tostring(after)))
+-- Try from the NPC first, then from the pad.
+for _, target in ipairs({ npcPart, workspace:FindFirstChild("CandyDropOff") }) do
+	if target and rootPart then
+		local part = target:IsA("BasePart") and target or target:FindFirstChildWhichIsA("BasePart")
+		if part then
+			rootPart.CFrame = CFrame.new(part.Position + Vector3.new(0, 3, 0))
+			task.wait(1)
+			local ok, reply = pcall(function()
+				return buy:InvokeServer()
+			end)
+			task.wait(1)
+			print(string.format("from %s ok=%s reply=%s candy %s -> %s",
+				part.Name, tostring(ok), tostring(reply),
+				tostring(before), tostring(holder and holder.Value)))
+		end
+	end
 end
