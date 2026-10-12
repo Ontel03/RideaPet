@@ -26,7 +26,10 @@ local Config = {
 	highestValueFirst = true,
 	keyTap = 0.12,
 	arriveDelay = 0.35,
-	cycleLength = 3.0,
+	-- The pad is shared with egg deliveries, so both cooldowns guard "Egg Delivery Failed".
+	deliverDelay = 1.5,
+	afterDepositDelay = 2.0,
+	cycleLength = 6.0,
 	probeDelay = 0.4,
 	pickupAttempts = 3,
 	depositAttempts = 3,
@@ -255,8 +258,9 @@ local function finishCycle(startedAt, cycleLength)
 	end
 end
 
--- Carries the collected candy to the drop-off and hands it in. Depositing is what
--- actually scores, so it retries a few times before giving up.
+-- Carries the collected candy to the drop-off and hands it in. The pad is shared with
+-- egg deliveries, so arriving too soon after a pickup trips "Egg Delivery Failed",
+-- hence the cooldown before leaving and after handing in.
 local function depositAtDropOff(depositRemote, startedAt)
 	if not depositRemote then
 		return
@@ -272,6 +276,8 @@ local function depositAtDropOff(depositRemote, startedAt)
 		return
 	end
 
+	task.wait(Config.deliverDelay)
+
 	teleportTo(padPosition + PAD_HOVER)
 	task.wait(Config.arriveDelay)
 
@@ -279,6 +285,9 @@ local function depositAtDropOff(depositRemote, startedAt)
 		fireRemote(depositRemote)
 		task.wait(Config.probeDelay)
 	end
+
+	-- Let the pad settle before the next candy, otherwise the shared pad gets spammed.
+	task.wait(Config.afterDepositDelay)
 end
 
 -- Collects one candy, then deposits it at the drop-off. Both steps are verified by
