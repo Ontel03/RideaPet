@@ -111,6 +111,22 @@ local function holdPickupKey()
 	end)
 end
 
+-- Fires the candy's ProximityPrompt directly, so no key press is simulated.
+-- Returns true when the candy actually carries a prompt.
+local function triggerCandyPrompt(candyInstance)
+	local prompt = candyInstance:FindFirstChildWhichIsA("ProximityPrompt", true)
+	if not prompt then
+		return false
+	end
+
+	pcall(function()
+		prompt:InputHoldBegin()
+		task.wait(math.max(prompt.HoldDuration or 0, 0) + 0.1)
+		prompt:InputHoldEnd()
+	end)
+	return true
+end
+
 local function getCandyList()
 	local folder = getCandyFolder()
 	if not folder then
@@ -269,7 +285,10 @@ local function runCandyCycle(candy, position)
 	teleportTo(position + CANDY_HOVER)
 	task.wait(Config.arriveDelay)
 
-	holdPickupKey()
+	-- Prefer a direct prompt trigger; only simulate the key when there is no prompt.
+	if not triggerCandyPrompt(candy.instance) then
+		holdPickupKey()
+	end
 	stats.collected = stats.collected + 1
 	task.wait(Config.afterPickupDelay)
 
@@ -810,17 +829,11 @@ end
 local orderRow, orderTrack, orderKnob = createSettingRow(
 	halloweenPage, 4, "Highest value first", "Collect higher-value candy before the rest"
 )
-local modeRow, modeTrack, modeKnob = createSettingRow(
-	halloweenPage, 5, "Use pickup remote", "Use the discovered pickup action when available"
-)
-local padRow, padTrack, padKnob = createSettingRow(
-	halloweenPage, 6, "Stand on drop-off", "Move to the drop-off before remote pickup"
-)
 
-local function setSwitch(track, knob, enabled, disabled)
-	track.BackgroundColor3 = disabled and Theme.divider or (enabled and Theme.running or Theme.stopped)
+local function setSwitch(track, knob, enabled)
+	track.BackgroundColor3 = enabled and Theme.running or Theme.stopped
 	knob.Position = enabled and UDim2.new(1, -17, 0, 3) or UDim2.fromOffset(3, 3)
-	knob.BackgroundColor3 = disabled and Theme.muted or Theme.text
+	knob.BackgroundColor3 = Theme.text
 end
 
 local minimized = false
@@ -885,17 +898,6 @@ local function refreshOrder()
 	setSwitch(orderTrack, orderKnob, Config.highestValueFirst)
 end
 
-local function refreshMode()
-	local remoteUnavailable = not pickup.remote
-	modeRow.Active = not remoteUnavailable
-	modeRow.AutoButtonColor = not remoteUnavailable
-	setSwitch(modeTrack, modeKnob, Config.useRemotePickup and not remoteUnavailable, remoteUnavailable)
-end
-
-local function refreshPad()
-	setSwitch(padTrack, padKnob, Config.standOnPad)
-end
-
 local function showTab(tabName)
 	local isHome = tabName == "Home"
 	local isFarm = tabName == "Farm"
@@ -941,11 +943,6 @@ orderRow.MouseButton1Click:Connect(function()
 	refreshOrder()
 end)
 
-padRow.MouseButton1Click:Connect(function()
-	Config.standOnPad = not Config.standOnPad
-	refreshPad()
-end)
-
 homeTab.MouseButton1Click:Connect(function()
 	showTab("Home")
 end)
@@ -956,14 +953,6 @@ end)
 
 halloweenTab.MouseButton1Click:Connect(function()
 	showTab("Halloween")
-end)
-
-modeRow.MouseButton1Click:Connect(function()
-	if not pickup.remote then
-		return
-	end
-	Config.useRemotePickup = not Config.useRemotePickup
-	refreshMode()
 end)
 
 closeButton.MouseButton1Click:Connect(function()
@@ -990,11 +979,8 @@ for _, tab in ipairs({ homeTab, farmTab, halloweenTab }) do
 	end)
 end
 
-for _, row in ipairs({ orderRow, modeRow, padRow }) do
+for _, row in ipairs({ orderRow }) do
 	row.MouseEnter:Connect(function()
-		if row == modeRow and not pickup.remote then
-			return
-		end
 		TweenService:Create(row, TweenInfo.new(0.12), {
 			BackgroundColor3 = Theme.surface:Lerp(Color3.new(1, 1, 1), 0.08),
 		}):Play()
@@ -1025,8 +1011,6 @@ task.spawn(function()
 	local shownReadout, shownStats = "", ""
 	refreshRunState()
 	refreshOrder()
-	refreshMode()
-	refreshPad()
 	showTab("Home")
 
 	while screen.Parent do
@@ -1039,11 +1023,6 @@ task.spawn(function()
 			collectedValue.Text = tostring(stats.collected)
 			lapsValue.Text = tostring(stats.laps)
 			shownStats = statsText
-		end
-
-		-- Auto-refresh mode when discovery completes
-		if pickup.remote and not modeRow.Active then
-			refreshMode()
 		end
 
 		task.wait(0.3)
