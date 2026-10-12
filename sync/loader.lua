@@ -18,6 +18,7 @@ local PAD_HOVER = Vector3.new(0, 5, 0)
 -- by name instead of fuzzy keyword discovery.
 local COLLECT_REMOTE = "CollectCandy"
 local DEPOSIT_REMOTE = "DropCandy"
+local DEPOSIT_RECEIPT = "HalloweenCandyDeposited"
 
 -- Candy in this event are plain MeshParts driven by the CollectCandy/DropCandy remotes.
 -- The server checks distance, so every pickup starts with a teleport next to the target.
@@ -29,6 +30,9 @@ local Config = {
 	-- The pad is shared with egg deliveries, so both cooldowns guard "Egg Delivery Failed".
 	deliverDelay = 1.5,
 	afterDepositDelay = 2.0,
+	depositAttempts = 4,
+	depositWaitSteps = 8,
+	depositWaitStep = 0.25,
 	cycleLength = 6.0,
 	probeDelay = 0.4,
 	pickupAttempts = 3,
@@ -46,6 +50,7 @@ end)
 
 local stats = {
 	collected = 0,
+	deposited = 0,
 	laps = 0,
 }
 
@@ -244,10 +249,35 @@ local function findRemoteByName(targetName)
 	return nil
 end
 
+-- The server confirms a scored deposit with this event, so the cycle can wait for it
+-- instead of firing blindly and moving on.
+local depositReceipts = 0
+local watchingDeposits = false
+
+local function watchDepositReceipts()
+	if watchingDeposits then
+		return
+	end
+	watchingDeposits = true
+
+	local event = findRemoteByName(DEPOSIT_RECEIPT)
+	if not event or not event:IsA("RemoteEvent") then
+		watchingDeposits = false
+		return
+	end
+
+	event.OnClientEvent:Connect(function()
+		depositReceipts = depositReceipts + 1
+	end)
+end
+
 -- Resolves the collect/deposit remotes once, by exact name.
 local function resolveRemotes()
 	local collect = findRemoteByName(COLLECT_REMOTE)
 	local deposit = findRemoteByName(DEPOSIT_REMOTE)
+	if collect and deposit then
+		watchDepositReceipts()
+	end
 	return collect, deposit
 end
 
@@ -258,22 +288,23 @@ local function finishCycle(startedAt, cycleLength)
 	end
 end
 
--- Carries the collected candy to the drop-off and hands it in. The pad is shared with
--- egg deliveries, so arriving too soon after a pickup trips "Egg Delivery Failed",
--- hence the cooldown before leaving and after handing in.
+-- Carries the collected candy to the drop-off and hands it in. Each attempt waits for the
+-- server to confirm with HalloweenCandyDeposited, so a rejected drop is retried from the
+-- pad instead of silently moving on. The pad is shared with egg deliveries, hence the
+-- cooldowns before leaving and after handing in.
 local function depositAtDropOff(depositRemote, startedAt)
 	if not depositRemote then
-		return
+		return false
 	end
 
 	local pad = getDropOffPad()
 	if not pad then
-		return
+		return false
 	end
 
 	local padPosition = getWorldPosition(pad)
 	if not padPosition then
-		return
+		return false
 	end
 
 	task.wait(Config.deliverDelay)
@@ -281,13 +312,38 @@ local function depositAtDropOff(depositRemote, startedAt)
 	teleportTo(padPosition + PAD_HOVER)
 	task.wait(Config.arriveDelay)
 
+	local deposited = false
 	for attempt = 1, Config.depositAttempts do
+		local before = depositReceipts
 		fireRemote(depositRemote)
-		task.wait(Config.probeDelay)
+
+		-- Wait for the server receipt instead of assuming the drop landed.
+		for waited = 1, Config.depositWaitSteps do
+			task.wait(Config.depositWaitStep)
+			if depositReceipts > before then
+				deposited = true
+				break
+			end
+		end
+
+		if deposited then
+			break
+		end
+
+		-- Stay on the pad and try again; the drop is rejected when the position is stale.
+		teleportTo(padPosition + PAD_HOVER)
+		task.wait(Config.arriveDelay)
+	end
+
+	if deposited then
+		stats.deposited = stats.deposited + 1
+	else
+		print("[farm] deposit not confirmed after " .. Config.depositAttempts .. " attempts")
 	end
 
 	-- Let the pad settle before the next candy, otherwise the shared pad gets spammed.
 	task.wait(Config.afterDepositDelay)
+	return deposited
 end
 
 -- Collects one candy, then deposits it at the drop-off. Both steps are verified by
@@ -977,7 +1033,8 @@ local function readouts()
 	end
 
 	local timing = ("Tap %s %.2fs · %.1fs per candy"):format(PICKUP_KEY.Name, Config.keyTap, Config.cycleLength)
-	local statsText = ("Collected %d  ·  Laps %d"):format(stats.collected, stats.laps)
+	local statsText = ("Collected %d  ·  Deposited %d  ·  Laps %d"):format(
+		stats.collected, stats.deposited, stats.laps)
 	return firstLine .. "\n" .. timing, statsText
 end
 
