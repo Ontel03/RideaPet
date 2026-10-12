@@ -28,6 +28,7 @@ local Config = {
 	afterPadDelay = 1.5,
 	cycleLength = 3.0,
 	probeDelay = 0.4,
+	pickupAttempts = 3,
 	discoverKeywords = {
 		"candy", "sweet", "pick", "collect", "take", "grab", "drop",
 		"submit", "reward", "item", "bag", "trick", "treat", "halloween", "ghost",
@@ -111,21 +112,62 @@ local function holdPickupKey()
 	end)
 end
 
--- Fires the candy's ProximityPrompt directly, so no key press is simulated.
--- Returns true when the candy actually carries a prompt.
-local function triggerCandyPrompt(candyInstance)
+-- Finds the candy's prompt and teleports into its exact activation range.
+-- Returns nil when the candy has no prompt, so the caller can fall back to the key.
+local function preparePromptPickup(candyInstance, position)
 	local prompt = candyInstance:FindFirstChildWhichIsA("ProximityPrompt", true)
 	if not prompt then
-		return false
+		return nil
 	end
 
+	local anchor = prompt.Parent
+	if anchor and anchor:IsA("BasePart") then
+		-- Sit slightly in front of the candy and below its top so the prompt is in range.
+		teleportTo(anchor.Position + Vector3.new(0, 1, 0))
+	else
+		teleportTo(position + Vector3.new(0, 1, 0))
+	end
+
+	-- The camera-facing check is the usual reason a prompt refuses to trigger from a
+	-- spot that is technically in range, so clear it before attempting the pickup.
 	pcall(function()
+		prompt.RequiresLineOfSight = false
+		prompt.MaxActivationDistance = math.max(prompt.MaxActivationDistance or 10, 20)
+	end)
+
+	-- Retry the approach until the engine reports the prompt as usable from here.
+	for attempt = 1, 4 do
+		task.wait(Config.arriveDelay)
+		local reachable = prompt.Enabled
+		if reachable then
+			local origin = rootPart and rootPart.Position
+			local limit = math.max(prompt.MaxActivationDistance or 10, 0) + 4
+			if not origin or not anchor or not anchor:IsA("BasePart") or (origin - anchor.Position).Magnitude <= limit then
+				break
+			end
+		end
+		if attempt == 4 then
+			return nil
+		end
+		if anchor and anchor:IsA("BasePart") then
+			teleportTo(anchor.Position + Vector3.new(0, 1, 0))
+		else
+			teleportTo(position + Vector3.new(0, 1, 0))
+		end
+	end
+
+	return prompt
+end
+
+-- Fires the prompt directly, so no key press is simulated.
+local function firePrompt(prompt)
+	local ok = pcall(function()
 		-- The hold timer runs client-side, so zeroing it fires Triggered instantly.
 		prompt.HoldDuration = 0
 		prompt:InputHoldBegin()
 		prompt:InputHoldEnd()
 	end)
-	return true
+	return ok
 end
 
 local function getCandyList()
@@ -283,13 +325,34 @@ local function runCandyCycle(candy, position)
 		return
 	end
 
+	-- Prompt path: stand inside activation range, fire, and confirm the candy left.
+	local prompt = preparePromptPickup(candy.instance, position)
+	if prompt then
+		local collected = false
+		for attempt = 1, Config.pickupAttempts do
+			if firePrompt(prompt) and not candy.instance.Parent then
+				collected = true
+				break
+			end
+			-- Re-seat before retrying; the prompt range is tight and the camera angle matters.
+			local anchor = prompt.Parent
+			if anchor and anchor:IsA("BasePart") then
+				teleportTo(anchor.Position + Vector3.new(0, 1, 0))
+			end
+			task.wait(Config.arriveDelay)
+		end
+
+		if collected then
+			stats.collected = stats.collected + 1
+			finishCycle(startedAt, Config.cycleLength)
+			return
+		end
+	end
+
+	-- Key fallback: sit next to the candy and hold the pickup key.
 	teleportTo(position + CANDY_HOVER)
 	task.wait(Config.arriveDelay)
-
-	-- Prefer a direct prompt trigger; only simulate the key when there is no prompt.
-	if not triggerCandyPrompt(candy.instance) then
-		holdPickupKey()
-	end
+	holdPickupKey()
 	stats.collected = stats.collected + 1
 	task.wait(Config.afterPickupDelay)
 
