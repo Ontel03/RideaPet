@@ -1,6 +1,26 @@
--- Finds how many candies are held and what an egg costs, before wiring an auto-buy.
+-- Tests BuyHalloweenEgg with several call shapes and reports what the server answers.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+local replies = {}
+local WATCH = { EggBroke = true, EggTimerPause = true, ResumeHatch = true, Hatch = true }
+
+for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
+	for _, remote in ipairs(container:GetDescendants()) do
+		if remote:IsA("RemoteEvent") and WATCH[remote.Name] then
+			remote.OnClientEvent:Connect(function(...)
+				local parts = {}
+				for index = 1, select("#", ...) do
+					parts[index] = tostring(select(index, ...))
+				end
+				replies[#replies + 1] = remote.Name .. " " .. table.concat(parts, ", ")
+				print("[reply] " .. replies[#replies])
+			end)
+		end
+	end
+end
 
 local function findRemote(name)
 	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
@@ -13,44 +33,32 @@ local function findRemote(name)
 	return nil
 end
 
--- 1. How many candies are held right now.
+local buy = findRemote("BuyHalloweenEgg")
 local getState = findRemote("GetCandyState")
-if getState then
+print("buy=" .. tostring(buy and buy.ClassName))
+
+local function candyTotal()
 	local ok, state = pcall(function()
 		return getState:InvokeServer()
 	end)
-	if ok and type(state) == "table" then
-		local total, shown = 0, 0
-		for key, value in pairs(state) do
-			if type(value) == "number" then
-				total = total + value
-				if shown < 8 then
-					print(string.format("  %s = %d", tostring(key), value))
-					shown = shown + 1
-				end
-			end
-		end
-		print("TOTAL CANDY = " .. tostring(total))
-	else
-		print("state bukan table: " .. type(state))
+	if not ok or type(state) ~= "table" then return nil end
+	local total = 0
+	for _, value in pairs(state) do
+		if type(value) == "number" then total = total + value end
 	end
-else
-	print("GetCandyState tidak ada")
+	return total
 end
 
--- 2. Egg cost, if any object advertises it.
-local shown = 0
-for _, descendant in ipairs(workspace:GetDescendants()) do
-	if descendant.Name:find("Egg") and shown < 4 then
-		local attributes = descendant:GetAttributes()
-		local parts = {}
-		for attribute, value in pairs(attributes) do
-			parts[#parts + 1] = attribute .. "=" .. tostring(value)
-		end
-		if #parts > 0 then
-			print("EGG " .. descendant:GetFullName() .. " [" .. descendant.ClassName .. "]")
-			print("  " .. table.concat(parts, ", "))
-			shown = shown + 1
-		end
-	end
-end
+local before = candyTotal()
+print("candy sebelum: " .. tostring(before))
+
+-- Try the plain call first: most games buy one egg with no arguments.
+pcall(function()
+	if buy:IsA("RemoteFunction") then buy:InvokeServer() else buy:FireServer() end
+end)
+task.wait(2)
+
+local after = candyTotal()
+print("candy sesudah: " .. tostring(after))
+print("selisih: " .. tostring((after or 0) - (before or 0)))
+print("replies: " .. tostring(#replies))
