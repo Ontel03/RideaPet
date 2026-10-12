@@ -1,41 +1,27 @@
--- Candy inspector: one-time dump of what the event actually exposes.
--- Paste in the executor. Everything prints to the console.
-
-local Players = game:GetService("Players")
+-- Minimal probe: prints only what is needed to identify the pickup mechanism.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-print("== WORKSPACE ==")
-for _, child in ipairs(workspace:GetChildren()) do
-	print("  " .. child.Name .. " [" .. child.ClassName .. "]")
-end
-
-print("== HalloweenCandy ==")
 local folder = workspace:FindFirstChild("HalloweenCandy")
-if not folder then
-	print("  NOT FOUND")
+local candy = folder and folder:GetChildren()[1]
+
+if not candy then
+	print("CANDY: tidak ada")
 else
-	print("  count: " .. #folder:GetChildren())
-	for index, candy in ipairs(folder:GetChildren()) do
-		if index > 2 then
-			print("  ...more")
-			break
-		end
-		print("  " .. candy.Name .. " [" .. candy.ClassName .. "]")
-		for _, descendant in ipairs(candy:GetDescendants()) do
-			print("    - " .. descendant.Name .. " [" .. descendant.ClassName .. "]")
-		end
-	end
+	local hasPrompt = candy:FindFirstChildWhichIsA("ProximityPrompt", true) ~= nil
+	local hasClick = candy:FindFirstChildWhichIsA("ClickDetector", true) ~= nil
+	local hasTool = candy:FindFirstChildWhichIsA("Tool", true) ~= nil
+	print(string.format("CANDY: %s [%s] jml=%d prompt=%s click=%s tool=%s",
+		candy.Name, candy.ClassName, #folder:GetChildren(),
+		tostring(hasPrompt), tostring(hasClick), tostring(hasTool)))
 end
 
-print("== Remotes ==")
+local names = {}
 for _, remote in ipairs(ReplicatedStorage:GetDescendants()) do
 	if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-		print("  " .. remote:GetFullName())
+		names[#names + 1] = remote.Name
 	end
 end
+print("REMOTE(" .. #names .. "): " .. table.concat(names, ", "))
 
-print("== Tools ==")
-local player = Players.LocalPlayer
-for _, tool in ipairs(player.Backpack:GetChildren()) do
-	print("  backpack: " .. tool.Name)
-end
+local drop = workspace:FindFirstChild("CandyDropOff")
+print("DROPOFF: " .. (drop and drop.Name or "tidak ada"))
