@@ -20,7 +20,6 @@ local COLLECT_REMOTE = "CollectCandy"
 local DEPOSIT_REMOTE = "DropCandy"
 local DEPOSIT_RECEIPT = "HalloweenCandyDeposited"
 local EGG_REMOTE = "BuyHalloweenEgg"
-local STATE_REMOTE = "GetCandyState"
 
 -- Candy in this event are plain MeshParts driven by the CollectCandy/DropCandy remotes.
 -- The server checks distance, so every pickup starts with a teleport next to the target.
@@ -28,6 +27,8 @@ local Config = {
 	running = false,
 	highestValueFirst = true,
 	keyTap = 0.12,
+	autoBuyEgg = false,
+	eggCost = 350,
 	arriveDelay = 0.35,
 	-- The pad is shared with egg deliveries, so both cooldowns guard "Egg Delivery Failed".
 	deliverDelay = 1.5,
@@ -54,13 +55,14 @@ local stats = {
 	collected = 0,
 	deposited = 0,
 	laps = 0,
+	eggsBought = 0,
+	eggProgress = 0,
 }
 
 local pickup = {
 	collect = nil,
 	deposit = nil,
 	egg = nil,
-	state = nil,
 }
 
 local function getCandyFolder()
@@ -275,50 +277,59 @@ local function watchDepositReceipts()
 	end)
 end
 
--- Resolves the collect/deposit remotes once, by exact name.
+-- Resolves the remotes the farm needs, by exact name.
 local function resolveRemotes()
 	local collect = findRemoteByName(COLLECT_REMOTE)
 	local deposit = findRemoteByName(DEPOSIT_REMOTE)
 	local egg = findRemoteByName(EGG_REMOTE)
-	local state = findRemoteByName(STATE_REMOTE)
 	if collect and deposit then
 		watchDepositReceipts()
 	end
-	return collect, deposit, egg, state
+	return collect, deposit, egg
 end
 
--- GetCandyState returns a nested table (top level counts plus a "types" sub-table), so
--- the total has to be summed recursively or it reads as zero.
-local function sumNumbers(value, depth)
-	if type(value) == "number" then
-		return value
-	end
-	if type(value) ~= "table" or (depth or 0) > 3 then
-		return 0
-	end
-	local total = 0
-	for _, item in pairs(value) do
-		total = total + sumNumbers(item, (depth or 0) + 1)
-	end
-	return total
-end
-
--- Total candy currently held, read from the game's own state remote. Returns nil when
--- the state cannot be read, so the caller skips the purchase instead of guessing.
+-- The banked candy total lives in player.SavedData.HalloweenCandy, which is what the
+-- game's own UI reads. GetCandyState returns a nested shape that does not match it.
+local savedData = nil
 local function readCandyTotal()
-	local remote = pickup.state
-	if not remote or not remote:IsA("RemoteFunction") then
+	if not savedData then
+		savedData = player:FindFirstChild("SavedData") or player:WaitForChild("SavedData", 10)
+	end
+	if not savedData then
 		return nil
 	end
 
-	local ok, state = pcall(function()
-		return remote:InvokeServer()
-	end)
-	if not ok or type(state) ~= "table" then
+	local holder = savedData:FindFirstChild("HalloweenCandy")
+	if not holder then
 		return nil
 	end
 
-	return sumNumbers(state, 0)
+	if holder:IsA("NumberValue") or holder:IsA("IntValue") then
+		return holder.Value
+	end
+	if holder:IsA("StringValue") then
+		return tonumber(holder.Value)
+	end
+	return nil
+end
+
+-- Candy currently in hand, which is what the drop-off consumes.
+local function readCarriedCandy()
+	local container = player:FindFirstChild("NoSaveData")
+	if not container then
+		return nil
+	end
+	local holder = container:FindFirstChild("CarriedCandy")
+	if not holder then
+		return nil
+	end
+	if holder:IsA("NumberValue") or holder:IsA("IntValue") then
+		return holder.Value
+	end
+	if holder:IsA("StringValue") then
+		return tonumber(holder.Value)
+	end
+	return nil
 end
 
 -- Buys one egg when the held candy covers the price. BuyHalloweenEgg is a RemoteFunction,
@@ -388,6 +399,12 @@ local function depositAtDropOff(depositRemote, startedAt)
 				deposited = true
 				break
 			end
+			-- NoSaveData.CarriedCandy drops to zero once the pad takes it, which is the
+			-- same signal when the deposit event is missed.
+			if readCarriedCandy() == 0 then
+				deposited = true
+				break
+			end
 		end
 
 		if deposited then
@@ -400,6 +417,10 @@ local function depositAtDropOff(depositRemote, startedAt)
 			for waited = 1, Config.depositWaitSteps do
 				task.wait(Config.depositWaitStep)
 				if depositReceipts > before then
+					deposited = true
+					break
+				end
+				if readCarriedCandy() == 0 then
 					deposited = true
 					break
 				end
@@ -419,6 +440,11 @@ local function depositAtDropOff(depositRemote, startedAt)
 
 	-- Let the pad settle before the next candy, otherwise the shared pad gets spammed.
 	task.wait(Config.afterDepositDelay)
+
+	if deposited then
+		tryBuyEgg()
+	end
+
 	return deposited
 end
 
@@ -479,7 +505,7 @@ end
 task.spawn(function()
 	local deadline = os.clock() + 20
 	repeat
-		pickup.collect, pickup.deposit = resolveRemotes()
+		pickup.collect, pickup.deposit, pickup.egg = resolveRemotes()
 		if not pickup.collect then
 			task.wait(1)
 		end
@@ -491,6 +517,11 @@ task.spawn(function()
 			print("[farm] deposit remote:", pickup.deposit:GetFullName())
 		else
 			print("[farm] no deposit remote found")
+		end
+		if pickup.egg then
+			print("[farm] egg remote:", pickup.egg:GetFullName(), "cost " .. Config.eggCost)
+		else
+			print("[farm] no " .. EGG_REMOTE .. " remote found")
 		end
 	else
 		print("[farm] no " .. COLLECT_REMOTE .. " remote found, using teleport + key")
@@ -936,7 +967,7 @@ create("TextLabel", {
 	Size = UDim2.new(0.5, 0, 0, 16),
 	Position = UDim2.new(0.5, 0, 0, 38),
 	BackgroundTransparency = 1,
-	Text = "LAPS",
+	Text = "DEPOSITED",
 	TextColor3 = Theme.muted,
 	TextSize = 9,
 	Font = Enum.Font.GothamBold,
@@ -1008,6 +1039,9 @@ end
 local orderRow, orderTrack, orderKnob = createSettingRow(
 	halloweenPage, 4, "Highest value first", "Collect higher-value candy before the rest"
 )
+local eggRow, eggTrack, eggKnob = createSettingRow(
+	halloweenPage, 5, "Auto buy Halloween egg", "Buy one egg once the banked candy covers the price"
+)
 
 local function setSwitch(track, knob, enabled)
 	track.BackgroundColor3 = enabled and Theme.running or Theme.stopped
@@ -1077,6 +1111,13 @@ local function refreshOrder()
 	setSwitch(orderTrack, orderKnob, Config.highestValueFirst)
 end
 
+local function refreshEgg()
+	local available = pickup.egg ~= nil
+	eggRow.Active = available
+	eggRow.AutoButtonColor = available
+	setSwitch(eggTrack, eggKnob, Config.autoBuyEgg and available)
+end
+
 local function showTab(tabName)
 	local isHome = tabName == "Home"
 	local isFarm = tabName == "Farm"
@@ -1107,9 +1148,19 @@ local function readouts()
 		firstLine = ("Waiting for candies in workspace.%s"):format(CANDY_FOLDER)
 	end
 
-	local timing = ("Tap %s %.2fs · %.1fs per candy"):format(PICKUP_KEY.Name, Config.keyTap, Config.cycleLength)
-	local statsText = ("Collected %d  ·  Deposited %d  ·  Laps %d"):format(
-		stats.collected, stats.deposited, stats.laps)
+	local timing = ("%.1fs per candy"):format(Config.cycleLength)
+
+	if Config.autoBuyEgg then
+		local banked = readCandyTotal()
+		if banked then
+			local ready = banked >= Config.eggCost
+			timing = timing .. ("\nEgg %d/%d%s"):format(
+				math.min(banked, Config.eggCost), Config.eggCost, ready and " ready" or "")
+		end
+	end
+
+	local statsText = ("Collected %d  ·  Deposited %d  ·  Eggs %d"):format(
+		stats.collected, stats.deposited, stats.eggsBought)
 	return firstLine .. "\n" .. timing, statsText
 end
 
@@ -1121,6 +1172,16 @@ end)
 orderRow.MouseButton1Click:Connect(function()
 	Config.highestValueFirst = not Config.highestValueFirst
 	refreshOrder()
+end)
+
+eggRow.MouseButton1Click:Connect(function()
+	if not pickup.egg then
+		return
+	end
+	Config.autoBuyEgg = not Config.autoBuyEgg
+	refreshEgg()
+	print("[farm] auto buy egg " .. (Config.autoBuyEgg and "on" or "off")
+		.. " (cost " .. Config.eggCost .. ")")
 end)
 
 homeTab.MouseButton1Click:Connect(function()
@@ -1159,8 +1220,11 @@ for _, tab in ipairs({ homeTab, farmTab, halloweenTab }) do
 	end)
 end
 
-for _, row in ipairs({ orderRow }) do
+for _, row in ipairs({ orderRow, eggRow }) do
 	row.MouseEnter:Connect(function()
+		if row == eggRow and not pickup.egg then
+			return
+		end
 		TweenService:Create(row, TweenInfo.new(0.12), {
 			BackgroundColor3 = Theme.surface:Lerp(Color3.new(1, 1, 1), 0.08),
 		}):Play()
@@ -1191,6 +1255,7 @@ task.spawn(function()
 	local shownReadout, shownStats = "", ""
 	refreshRunState()
 	refreshOrder()
+	refreshEgg()
 	showTab("Home")
 
 	while screen.Parent do
@@ -1201,7 +1266,7 @@ task.spawn(function()
 		end
 		if statsText ~= shownStats then
 			collectedValue.Text = tostring(stats.collected)
-			lapsValue.Text = tostring(stats.laps)
+			lapsValue.Text = tostring(stats.deposited)
 			shownStats = statsText
 		end
 
