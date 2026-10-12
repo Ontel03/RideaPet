@@ -120,8 +120,9 @@ local function triggerCandyPrompt(candyInstance)
 	end
 
 	pcall(function()
+		-- The hold timer runs client-side, so zeroing it fires Triggered instantly.
+		prompt.HoldDuration = 0
 		prompt:InputHoldBegin()
-		task.wait(math.max(prompt.HoldDuration or 0, 0) + 0.1)
 		prompt:InputHoldEnd()
 	end)
 	return true
