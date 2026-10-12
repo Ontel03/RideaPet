@@ -548,7 +548,7 @@ local subtitleLabel = create("TextLabel", {
 
 local minimizeButton = create("TextButton", {
 	Size = UDim2.fromOffset(72, 28),
-	Position = UDim2.new(1, -82, 0, 12),
+	Position = UDim2.new(1, -114, 0, 12),
 	BackgroundColor3 = Theme.surface,
 	BorderSizePixel = 0,
 	Text = "Minimize",
@@ -561,7 +561,7 @@ round(minimizeButton, 6)
 
 local closeButton = create("TextButton", {
 	Size = UDim2.fromOffset(26, 28),
-	Position = UDim2.new(1, -108, 0, 12),
+	Position = UDim2.new(1, -36, 0, 12),
 	BackgroundColor3 = Theme.surface,
 	BorderSizePixel = 0,
 	Text = "X",
