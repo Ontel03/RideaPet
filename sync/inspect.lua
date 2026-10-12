@@ -1,34 +1,51 @@
--- The candy total in the UI likely comes from a player stat, not GetCandyState.
+-- Walks the whole auto-buy chain and reports where it breaks.
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 
-print("== ATTRIBUTES ==")
-local count = 0
-for attribute, value in pairs(player:GetAttributes()) do
-	print("  " .. attribute .. " = " .. tostring(value))
-	count = count + 1
-end
-if count == 0 then print("  (tidak ada)") end
-
-print("== LEADERSTATS ==")
-local stats = player:FindFirstChild("leaderstats")
-if not stats then
-	print("  (tidak ada leaderstats)")
-else
-	for _, child in ipairs(stats:GetChildren()) do
-		if child:IsA("IntValue") or child:IsA("NumberValue") or child:IsA("StringValue") then
-			print("  " .. child.Name .. " = " .. tostring(child.Value))
+local function findRemote(name)
+	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
+		for _, remote in ipairs(container:GetDescendants()) do
+			if (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) and remote.Name == name then
+				return remote
+			end
 		end
 	end
+	return nil
 end
 
-print("== CANDY-ISH VALUES ==")
-local found = 0
-for _, descendant in ipairs(player:GetDescendants()) do
-	if (descendant:IsA("IntValue") or descendant:IsA("NumberValue")) and descendant.Name:lower():find("cand") then
-		print("  " .. descendant:GetFullName() .. " = " .. tostring(descendant.Value))
-		found = found + 1
-	end
+-- 1. Candy total, the same way the loader reads it.
+local saved = player:FindFirstChild("SavedData")
+print("SavedData = " .. tostring(saved and saved:GetFullName()))
+local holder = saved and saved:FindFirstChild("HalloweenCandy")
+print("HalloweenCandy = " .. tostring(holder and holder:GetFullName()) .. " class=" .. tostring(holder and holder.ClassName))
+if holder then
+	print("  value = " .. tostring(holder.Value) .. "  type=" .. type(holder.Value))
 end
-if found == 0 then print("  (tidak ada nilai candy di player)") end
+
+-- 2. The egg remote.
+local buy = findRemote("BuyHalloweenEgg")
+print("BuyHalloweenEgg = " .. tostring(buy and buy.ClassName))
+
+if not buy or not holder then
+	print("STOP: salah satu remote/variable tidak ada")
+	return
+end
+
+-- 3. Try the call shapes and read each verdict.
+local shapes = {
+	{ "noargs", function() return buy:InvokeServer() end },
+	{ "true", function() return buy:InvokeServer(true) end },
+	{ "1", function() return buy:InvokeServer(1) end },
+	{ "auto", function() return buy:InvokeServer("auto") end },
+}
+
+for _, shape in ipairs(shapes) do
+	local before = holder.Value
+	local ok, reply = pcall(shape[2])
+	task.wait(1)
+	local after = holder.Value
+	print(string.format("%s ok=%s reply=%s candy %s -> %s", shape[1], tostring(ok),
+		tostring(reply), tostring(before), tostring(after)))
+end
