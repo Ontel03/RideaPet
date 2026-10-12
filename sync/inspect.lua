@@ -1,47 +1,34 @@
--- Verifies the candy total reader against the number shown in the game UI.
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+-- The candy total in the UI likely comes from a player stat, not GetCandyState.
 
-local function findRemote(name)
-	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
-		for _, remote in ipairs(container:GetDescendants()) do
-			if (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) and remote.Name == name then
-				return remote
-			end
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+
+print("== ATTRIBUTES ==")
+local count = 0
+for attribute, value in pairs(player:GetAttributes()) do
+	print("  " .. attribute .. " = " .. tostring(value))
+	count = count + 1
+end
+if count == 0 then print("  (tidak ada)") end
+
+print("== LEADERSTATS ==")
+local stats = player:FindFirstChild("leaderstats")
+if not stats then
+	print("  (tidak ada leaderstats)")
+else
+	for _, child in ipairs(stats:GetChildren()) do
+		if child:IsA("IntValue") or child:IsA("NumberValue") or child:IsA("StringValue") then
+			print("  " .. child.Name .. " = " .. tostring(child.Value))
 		end
 	end
-	return nil
 end
 
-local function sumNumbers(value, depth)
-	if type(value) == "number" then return value end
-	if type(value) ~= "table" or (depth or 0) > 3 then return 0 end
-	local total = 0
-	for _, item in pairs(value) do
-		total = total + sumNumbers(item, (depth or 0) + 1)
-	end
-	return total
-end
-
-local state = findRemote("GetCandyState")
-local ok, result = pcall(function()
-	return state:InvokeServer()
-end)
-
-if not ok then
-	print("gagal baca state: " .. tostring(result))
-	return
-end
-
--- Top level only, for comparison with the recursive sum.
-local flat = 0
-local flatKeys = 0
-for _, value in pairs(result) do
-	if type(value) == "number" then
-		flat = flat + value
-		flatKeys = flatKeys + 1
+print("== CANDY-ISH VALUES ==")
+local found = 0
+for _, descendant in ipairs(player:GetDescendants()) do
+	if (descendant:IsA("IntValue") or descendant:IsA("NumberValue")) and descendant.Name:lower():find("cand") then
+		print("  " .. descendant:GetFullName() .. " = " .. tostring(descendant.Value))
+		found = found + 1
 	end
 end
-
-print("top-level keys=" .. flatKeys .. " sum=" .. flat)
-print("recursive sum=" .. sumNumbers(result, 0))
-print("UI lu bilang 376 -- cocoknya yang mana?")
+if found == 0 then print("  (tidak ada nilai candy di player)") end
