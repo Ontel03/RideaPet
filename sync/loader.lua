@@ -334,34 +334,54 @@ end
 
 -- Buys one egg when the held candy covers the price. BuyHalloweenEgg is a RemoteFunction,
 -- so its return value is the server's verdict rather than a silent side effect.
+local lastEggNotice = ""
 local function tryBuyEgg()
 	if not Config.autoBuyEgg then
 		return false
 	end
 
+	if not pickup.egg then
+		return false
+	end
+
 	local total = readCandyTotal()
 	if not total then
+		if lastEggNotice ~= "no-state" then
+			lastEggNotice = "no-state"
+			print("[farm] cannot read SavedData.HalloweenCandy")
+		end
 		return false
 	end
 
 	if total < Config.eggCost then
 		stats.eggProgress = total
+		lastEggNotice = ""
 		return false
 	end
 
-	local ok, result = pcall(function()
+	local callOk, reply = pcall(function()
 		return pickup.egg:InvokeServer()
 	end)
 
 	stats.eggProgress = total
-	if ok then
-		stats.eggsBought = stats.eggsBought + 1
-		print("[farm] bought egg, total candy was " .. total)
-		return true
+	if not callOk then
+		print("[farm] egg call threw: " .. tostring(reply))
+		lastEggNotice = "threw"
+		return false
 	end
 
-	print("[farm] egg purchase rejected: " .. tostring(result))
-	return false
+	-- A rejected purchase comes back as a plain value, not an error, so the reply itself
+	-- has to decide whether the egg was actually granted.
+	if reply == false or reply == nil then
+		print("[farm] egg refused, server said: " .. tostring(reply))
+		lastEggNotice = "refused"
+		return false
+	end
+
+	stats.eggsBought = stats.eggsBought + 1
+	print("[farm] bought egg with " .. total .. " candy, reply: " .. tostring(reply))
+	lastEggNotice = ""
+	return true
 end
 
 local function finishCycle(startedAt, cycleLength)
@@ -1180,8 +1200,6 @@ eggRow.MouseButton1Click:Connect(function()
 	end
 	Config.autoBuyEgg = not Config.autoBuyEgg
 	refreshEgg()
-	print("[farm] auto buy egg " .. (Config.autoBuyEgg and "on" or "off")
-		.. " (cost " .. Config.eggCost .. ")")
 end)
 
 homeTab.MouseButton1Click:Connect(function()
