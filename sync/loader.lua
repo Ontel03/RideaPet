@@ -19,6 +19,8 @@ local PAD_HOVER = Vector3.new(0, 5, 0)
 local COLLECT_REMOTE = "CollectCandy"
 local DEPOSIT_REMOTE = "DropCandy"
 local DEPOSIT_RECEIPT = "HalloweenCandyDeposited"
+local EGG_REMOTE = "BuyHalloweenEgg"
+local STATE_REMOTE = "GetCandyState"
 
 -- Candy in this event are plain MeshParts driven by the CollectCandy/DropCandy remotes.
 -- The server checks distance, so every pickup starts with a teleport next to the target.
@@ -57,6 +59,8 @@ local stats = {
 local pickup = {
 	collect = nil,
 	deposit = nil,
+	egg = nil,
+	state = nil,
 }
 
 local function getCandyFolder()
@@ -275,10 +279,78 @@ end
 local function resolveRemotes()
 	local collect = findRemoteByName(COLLECT_REMOTE)
 	local deposit = findRemoteByName(DEPOSIT_REMOTE)
+	local egg = findRemoteByName(EGG_REMOTE)
+	local state = findRemoteByName(STATE_REMOTE)
 	if collect and deposit then
 		watchDepositReceipts()
 	end
-	return collect, deposit
+	return collect, deposit, egg, state
+end
+
+-- GetCandyState returns a nested table (top level counts plus a "types" sub-table), so
+-- the total has to be summed recursively or it reads as zero.
+local function sumNumbers(value, depth)
+	if type(value) == "number" then
+		return value
+	end
+	if type(value) ~= "table" or (depth or 0) > 3 then
+		return 0
+	end
+	local total = 0
+	for _, item in pairs(value) do
+		total = total + sumNumbers(item, (depth or 0) + 1)
+	end
+	return total
+end
+
+-- Total candy currently held, read from the game's own state remote. Returns nil when
+-- the state cannot be read, so the caller skips the purchase instead of guessing.
+local function readCandyTotal()
+	local remote = pickup.state
+	if not remote or not remote:IsA("RemoteFunction") then
+		return nil
+	end
+
+	local ok, state = pcall(function()
+		return remote:InvokeServer()
+	end)
+	if not ok or type(state) ~= "table" then
+		return nil
+	end
+
+	return sumNumbers(state, 0)
+end
+
+-- Buys one egg when the held candy covers the price. BuyHalloweenEgg is a RemoteFunction,
+-- so its return value is the server's verdict rather than a silent side effect.
+local function tryBuyEgg()
+	if not Config.autoBuyEgg then
+		return false
+	end
+
+	local total = readCandyTotal()
+	if not total then
+		return false
+	end
+
+	if total < Config.eggCost then
+		stats.eggProgress = total
+		return false
+	end
+
+	local ok, result = pcall(function()
+		return pickup.egg:InvokeServer()
+	end)
+
+	stats.eggProgress = total
+	if ok then
+		stats.eggsBought = stats.eggsBought + 1
+		print("[farm] bought egg, total candy was " .. total)
+		return true
+	end
+
+	print("[farm] egg purchase rejected: " .. tostring(result))
+	return false
 end
 
 local function finishCycle(startedAt, cycleLength)

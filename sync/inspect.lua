@@ -1,26 +1,5 @@
--- Tests BuyHalloweenEgg with several call shapes and reports what the server answers.
-
+-- Verifies the candy total reader against the number shown in the game UI.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-
-local replies = {}
-local WATCH = { EggBroke = true, EggTimerPause = true, ResumeHatch = true, Hatch = true }
-
-for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
-	for _, remote in ipairs(container:GetDescendants()) do
-		if remote:IsA("RemoteEvent") and WATCH[remote.Name] then
-			remote.OnClientEvent:Connect(function(...)
-				local parts = {}
-				for index = 1, select("#", ...) do
-					parts[index] = tostring(select(index, ...))
-				end
-				replies[#replies + 1] = remote.Name .. " " .. table.concat(parts, ", ")
-				print("[reply] " .. replies[#replies])
-			end)
-		end
-	end
-end
 
 local function findRemote(name)
 	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
@@ -33,32 +12,36 @@ local function findRemote(name)
 	return nil
 end
 
-local buy = findRemote("BuyHalloweenEgg")
-local getState = findRemote("GetCandyState")
-print("buy=" .. tostring(buy and buy.ClassName))
-
-local function candyTotal()
-	local ok, state = pcall(function()
-		return getState:InvokeServer()
-	end)
-	if not ok or type(state) ~= "table" then return nil end
+local function sumNumbers(value, depth)
+	if type(value) == "number" then return value end
+	if type(value) ~= "table" or (depth or 0) > 3 then return 0 end
 	local total = 0
-	for _, value in pairs(state) do
-		if type(value) == "number" then total = total + value end
+	for _, item in pairs(value) do
+		total = total + sumNumbers(item, (depth or 0) + 1)
 	end
 	return total
 end
 
-local before = candyTotal()
-print("candy sebelum: " .. tostring(before))
-
--- Try the plain call first: most games buy one egg with no arguments.
-pcall(function()
-	if buy:IsA("RemoteFunction") then buy:InvokeServer() else buy:FireServer() end
+local state = findRemote("GetCandyState")
+local ok, result = pcall(function()
+	return state:InvokeServer()
 end)
-task.wait(2)
 
-local after = candyTotal()
-print("candy sesudah: " .. tostring(after))
-print("selisih: " .. tostring((after or 0) - (before or 0)))
-print("replies: " .. tostring(#replies))
+if not ok then
+	print("gagal baca state: " .. tostring(result))
+	return
+end
+
+-- Top level only, for comparison with the recursive sum.
+local flat = 0
+local flatKeys = 0
+for _, value in pairs(result) do
+	if type(value) == "number" then
+		flat = flat + value
+		flatKeys = flatKeys + 1
+	end
+end
+
+print("top-level keys=" .. flatKeys .. " sum=" .. flat)
+print("recursive sum=" .. sumNumbers(result, 0))
+print("UI lu bilang 376 -- cocoknya yang mana?")
