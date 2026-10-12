@@ -9,7 +9,7 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 
 local CANDY_FOLDER = "HalloweenCandy"
-local DROP_OFF = "CandyDropOff"
+local DROP_OFF = "DoorCandyDrop"
 local PICKUP_KEY = Enum.KeyCode.E
 local CANDY_HOVER = Vector3.new(0, 3, 0)
 local PAD_HOVER = Vector3.new(0, 5, 0)
@@ -26,11 +26,10 @@ local Config = {
 	highestValueFirst = true,
 	keyTap = 0.12,
 	arriveDelay = 0.35,
-	afterPickupDelay = 3.5,
-	afterPadDelay = 1.5,
 	cycleLength = 3.0,
 	probeDelay = 0.4,
 	pickupAttempts = 3,
+	depositAttempts = 3,
 }
 
 local player = Players.LocalPlayer
@@ -56,12 +55,29 @@ local function getCandyFolder()
 	return workspace:FindFirstChild(CANDY_FOLDER)
 end
 
+-- The drop-off is a Part flagged with PumpkinDrop inside the house model, not a
+-- workspace folder, so look the flag up instead of a fixed path.
+local cachedDropOff = nil
 local function getDropOffPad()
-	local dropOff = workspace:FindFirstChild(DROP_OFF)
-	if not dropOff then
-		return nil
+	if cachedDropOff and cachedDropOff.Parent then
+		return cachedDropOff
 	end
-	return dropOff:FindFirstChild("Pad") or dropOff
+
+	for _, descendant in ipairs(workspace:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant:GetAttribute("PumpkinDrop") then
+			cachedDropOff = descendant
+			return descendant
+		end
+	end
+
+	for _, descendant in ipairs(workspace:GetDescendants()) do
+		if descendant:IsA("BasePart") and descendant.Name == DROP_OFF then
+			cachedDropOff = descendant
+			return descendant
+		end
+	end
+
+	return nil
 end
 
 local function getWorldPosition(object)
@@ -229,6 +245,32 @@ local function finishCycle(startedAt, cycleLength)
 	end
 end
 
+-- Carries the collected candy to the drop-off and hands it in. Depositing is what
+-- actually scores, so it retries a few times before giving up.
+local function depositAtDropOff(depositRemote, startedAt)
+	if not depositRemote then
+		return
+	end
+
+	local pad = getDropOffPad()
+	if not pad then
+		return
+	end
+
+	local padPosition = getWorldPosition(pad)
+	if not padPosition then
+		return
+	end
+
+	teleportTo(padPosition + PAD_HOVER)
+	task.wait(Config.arriveDelay)
+
+	for attempt = 1, Config.depositAttempts do
+		fireRemote(depositRemote)
+		task.wait(Config.probeDelay)
+	end
+end
+
 -- Collects one candy, then deposits it at the drop-off. Both steps are verified by
 -- watching the folder, so a silent failure never counts as a pickup.
 local function runCandyCycle(candy, position)
@@ -237,12 +279,15 @@ local function runCandyCycle(candy, position)
 	local collectRemote, depositRemote = pickup.collect, pickup.deposit
 
 	if collectRemote then
+		-- CollectCandy wants the SpawnId attribute (Candy1_12), not the object or its name.
+		local spawnId = candy.instance:GetAttribute("SpawnId")
+
 		-- The server checks distance, so stand next to the candy before asking for it.
 		teleportTo(position + CANDY_HOVER)
 		task.wait(Config.arriveDelay)
 
 		for attempt = 1, Config.pickupAttempts do
-			fireRemote(collectRemote, candy.instance)
+			fireRemote(collectRemote, spawnId)
 			task.wait(Config.probeDelay)
 			if not candy.instance.Parent then
 				break
@@ -251,17 +296,7 @@ local function runCandyCycle(candy, position)
 
 		if not candy.instance.Parent then
 			stats.collected = stats.collected + 1
-
-			if depositRemote then
-				local padPosition = getWorldPosition(getDropOffPad())
-				if padPosition then
-					teleportTo(padPosition + PAD_HOVER)
-					task.wait(Config.arriveDelay)
-					fireRemote(depositRemote)
-					task.wait(Config.probeDelay)
-				end
-			end
-
+			depositAtDropOff(depositRemote, startedAt)
 			finishCycle(startedAt, Config.cycleLength)
 			return
 		end
@@ -285,12 +320,7 @@ local function runCandyCycle(candy, position)
 	end
 
 	stats.collected = stats.collected + 1
-
-	local padPosition = getWorldPosition(getDropOffPad())
-	if padPosition then
-		teleportTo(padPosition + PAD_HOVER)
-		task.wait(Config.afterPadDelay)
-	end
+	depositAtDropOff(pickup.deposit, startedAt)
 
 	finishCycle(startedAt, Config.cycleLength)
 end
