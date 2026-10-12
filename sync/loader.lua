@@ -9,7 +9,6 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 
 local CANDY_FOLDER = "HalloweenCandy"
-local DROP_OFF = "DoorCandyDrop"
 local PICKUP_KEY = Enum.KeyCode.E
 local CANDY_HOVER = Vector3.new(0, 3, 0)
 local PAD_HOVER = Vector3.new(0, 5, 0)
@@ -55,29 +54,30 @@ local function getCandyFolder()
 	return workspace:FindFirstChild(CANDY_FOLDER)
 end
 
--- The drop-off is a Part flagged with PumpkinDrop inside the house model, not a
--- workspace folder, so look the flag up instead of a fixed path.
+-- Candy and pumpkin have separate drop-off parts that can sit far apart, and both carry
+-- the PumpkinDrop flag, so match on the DoorCandy id rather than that flag.
 local cachedDropOff = nil
 local function getDropOffPad()
 	if cachedDropOff and cachedDropOff.Parent then
 		return cachedDropOff
 	end
 
+	local fallback = nil
 	for _, descendant in ipairs(workspace:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant:GetAttribute("PumpkinDrop") then
-			cachedDropOff = descendant
-			return descendant
+		if descendant:IsA("BasePart") then
+			local id = descendant:GetAttribute("Id")
+			if type(id) == "string" and string.find(id, "DoorCandy", 1, true) then
+				cachedDropOff = descendant
+				return descendant
+			end
+			if not fallback and string.find(descendant.Name, "CandyDrop", 1, true) then
+				fallback = descendant
+			end
 		end
 	end
 
-	for _, descendant in ipairs(workspace:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Name == DROP_OFF then
-			cachedDropOff = descendant
-			return descendant
-		end
-	end
-
-	return nil
+	cachedDropOff = fallback
+	return fallback
 end
 
 local function getWorldPosition(object)
