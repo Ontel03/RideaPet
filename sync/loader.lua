@@ -14,32 +14,26 @@ local PICKUP_KEY = Enum.KeyCode.E
 local CANDY_HOVER = Vector3.new(0, 3, 0)
 local PAD_HOVER = Vector3.new(0, 5, 0)
 
--- Discovery sends real calls to the server. It only probes remotes whose name matches
--- discoverKeywords, never one that matches denyKeywords, and stops at the first candy
--- that actually leaves the folder.
+-- The event exposes candy as plain MeshParts with dedicated remotes, so target those
+-- by name instead of fuzzy keyword discovery.
+local COLLECT_REMOTE = "CollectCandy"
+local DEPOSIT_REMOTE = "DropCandy"
+
+-- Candy in this event are plain MeshParts driven by the CollectCandy/DropCandy remotes.
+-- The server checks distance, so every pickup starts with a teleport next to the target.
 local Config = {
 	running = false,
-	useRemotePickup = true,
-	standOnPad = false,
 	highestValueFirst = true,
 	keyTap = 0.12,
-	arriveDelay = 0.5,
+	arriveDelay = 0.35,
 	afterPickupDelay = 3.5,
 	afterPadDelay = 1.5,
 	cycleLength = 3.0,
 	probeDelay = 0.4,
 	pickupAttempts = 3,
-	discoverKeywords = {
-		"candy", "sweet", "pick", "collect", "take", "grab", "drop",
-		"submit", "reward", "item", "bag", "trick", "treat", "halloween", "ghost",
-	},
-	denyKeywords = { "buy", "shop", "purchase", "trade", "auction", "get", "request", "state", "status", "config", "data", "info", "sync", "update", "receive", "listen", "open" },
 }
 
-local SHAPES = { "none", "candy", "pad+candy", "candy+player", "candy+pad+player" }
-
 local player = Players.LocalPlayer
-local playerScripts = player:WaitForChild("PlayerScripts")
 local character = player.Character or player.CharacterAdded:Wait()
 local rootPart = character:WaitForChild("HumanoidRootPart")
 
@@ -54,10 +48,8 @@ local stats = {
 }
 
 local pickup = {
-	remote = nil,
-	shape = nil,
-	candidates = 0,
-	scanned = 0,
+	collect = nil,
+	deposit = nil,
 }
 
 local function getCandyFolder()
@@ -171,64 +163,6 @@ do
 	end)
 end
 
--- Finds the candy's prompt and teleports into its exact activation range.
--- Returns nil when the candy has no prompt, so the caller can fall back to the key.
-local function preparePromptPickup(candyInstance, position)
-	local prompt = candyInstance:FindFirstChildWhichIsA("ProximityPrompt", true)
-	if not prompt then
-		return nil
-	end
-
-	local anchor = prompt.Parent
-	if anchor and anchor:IsA("BasePart") then
-		-- Sit slightly in front of the candy and below its top so the prompt is in range.
-		teleportTo(anchor.Position + Vector3.new(0, 1, 0))
-	else
-		teleportTo(position + Vector3.new(0, 1, 0))
-	end
-
-	-- The camera-facing check is the usual reason a prompt refuses to trigger from a
-	-- spot that is technically in range, so clear it before attempting the pickup.
-	pcall(function()
-		prompt.RequiresLineOfSight = false
-		prompt.MaxActivationDistance = math.max(prompt.MaxActivationDistance or 10, 20)
-	end)
-
-	-- Retry the approach until the engine reports the prompt as usable from here.
-	for attempt = 1, 4 do
-		task.wait(Config.arriveDelay)
-		local reachable = prompt.Enabled
-		if reachable then
-			local origin = rootPart and rootPart.Position
-			local limit = math.max(prompt.MaxActivationDistance or 10, 0) + 4
-			if not origin or not anchor or not anchor:IsA("BasePart") or (origin - anchor.Position).Magnitude <= limit then
-				break
-			end
-		end
-		if attempt == 4 then
-			return nil
-		end
-		if anchor and anchor:IsA("BasePart") then
-			teleportTo(anchor.Position + Vector3.new(0, 1, 0))
-		else
-			teleportTo(position + Vector3.new(0, 1, 0))
-		end
-	end
-
-	return prompt
-end
-
--- Fires the prompt directly, so no key press is simulated.
-local function firePrompt(prompt)
-	local ok = pcall(function()
-		-- The hold timer runs client-side, so zeroing it fires Triggered instantly.
-		prompt.HoldDuration = 0
-		prompt:InputHoldBegin()
-		prompt:InputHoldEnd()
-	end)
-	return ok
-end
-
 local function getCandyList()
 	local folder = getCandyFolder()
 	if not folder then
@@ -253,125 +187,39 @@ local function getCandyList()
 	return candies
 end
 
-local function matchesAny(text, words)
-	local lower = string.lower(text)
-	for _, word in ipairs(words) do
-		if string.find(lower, word, 1, true) then
-			return true
-		end
+local function fireRemote(remote, ...)
+	if not remote then
+		return false
 	end
-	return false
-end
-
-local function getAllRemotes()
-	local containers = { ReplicatedStorage, playerScripts, game:GetService("ReplicatedFirst") }
-	local remotes = {}
-	for _, container in ipairs(containers) do
-		for _, remote in ipairs(container:GetDescendants()) do
-			if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-				table.insert(remotes, remote)
-			end
+	local args = { ... }
+	local count = select("#", ...)
+	local ok = pcall(function()
+		if remote:IsA("RemoteFunction") then
+			remote:InvokeServer(table.unpack(args, 1, count))
+		else
+			remote:FireServer(table.unpack(args, 1, count))
 		end
-	end
-	return remotes
-end
-
-local function getCandidates()
-	local candidates = {}
-	for _, remote in ipairs(getAllRemotes()) do
-		local path = remote:GetFullName()
-		if matchesAny(path, Config.discoverKeywords) and not matchesAny(path, Config.denyKeywords) then
-			table.insert(candidates, remote)
-		end
-	end
-
-	-- RemoteFunctions first: InvokeServer is where games tend to put authoritative actions.
-	table.sort(candidates, function(a, b)
-		local aFunction = a:IsA("RemoteFunction")
-		local bFunction = b:IsA("RemoteFunction")
-		if aFunction ~= bFunction then
-			return aFunction
-		end
-		return a:GetFullName() < b:GetFullName()
 	end)
-	return candidates
+	return ok
 end
 
-local function buildArgs(shape, candy, pad)
-	if shape == "none" then
-		return {}
-	elseif shape == "candy" then
-		return { candy }
-	elseif shape == "pad+candy" then
-		return { pad, candy }
-	elseif shape == "candy+player" then
-		return { candy, player }
-	end
-	return { candy, pad, player }
-end
-
-local function fire(remote, shape, candy, pad)
-	local args = buildArgs(shape, candy, pad)
-	local count = #args
-	if remote:IsA("RemoteFunction") then
-		remote:InvokeServer(table.unpack(args, 1, count))
-	else
-		remote:FireServer(table.unpack(args, 1, count))
-	end
-end
-
-local function discoverPickupRemote(candidates)
-	local folder = getCandyFolder()
-	if not folder then
-		return nil
-	end
-
-	for _, remote in ipairs(candidates) do
-		for _, shape in ipairs(SHAPES) do
-			local children = folder:GetChildren()
-			if #children == 0 then
-				return nil
-			end
-
-			local target = children[1]
-			local pad = getDropOffPad() or target
-			local sent = pcall(fire, remote, shape, target, pad)
-			task.wait(Config.probeDelay)
-
-			if not sent then
-				break
-			end
-
-			if not target.Parent then
-				-- A single success can be a candy that despawned on its own. Confirm the
-				-- same remote collects a second candy before trusting it.
-				local after = folder:GetChildren()
-				if #after == 0 then
-					return nil
-				end
-
-				local confirm = after[1]
-				pcall(fire, remote, shape, confirm, pad)
-				task.wait(Config.probeDelay)
-				if not confirm.Parent then
-					return remote, shape
-				end
+-- Finds a remote anywhere under ReplicatedStorage/ReplicatedFirst by exact name.
+local function findRemoteByName(targetName)
+	for _, container in ipairs({ ReplicatedStorage, game:GetService("ReplicatedFirst") }) do
+		for _, remote in ipairs(container:GetDescendants()) do
+			if (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) and remote.Name == targetName then
+				return remote
 			end
 		end
 	end
 	return nil
 end
 
-local function sendPickup(candy, pad)
-	local args = buildArgs(pickup.shape, candy, pad)
-	local count = #args
-	return pcall(function()
-		if pickup.remote:IsA("RemoteFunction") then
-			pickup.remote:InvokeServer(table.unpack(args, 1, count))
-		else
-			pickup.remote:FireServer(table.unpack(args, 1, count))
-		end
-	end)
+-- Resolves the collect/deposit remotes once, by exact name.
+local function resolveRemotes()
+	local collect = findRemoteByName(COLLECT_REMOTE)
+	local deposit = findRemoteByName(DEPOSIT_REMOTE)
+	return collect, deposit
 end
 
 local function finishCycle(startedAt, cycleLength)
@@ -381,56 +229,44 @@ local function finishCycle(startedAt, cycleLength)
 	end
 end
 
+-- Collects one candy, then deposits it at the drop-off. Both steps are verified by
+-- watching the folder, so a silent failure never counts as a pickup.
 local function runCandyCycle(candy, position)
 	local startedAt = os.clock()
+	local folder = getCandyFolder()
+	local collectRemote, depositRemote = pickup.collect, pickup.deposit
 
-	if pickup.remote and Config.useRemotePickup then
-		if Config.standOnPad then
-			teleportTo(getWorldPosition(getDropOffPad()) + PAD_HOVER)
-			task.wait(Config.afterPadDelay)
-		end
-
-		-- Only count a remote pickup when the candy actually leaves the folder. A remote
-		-- that fires without error is not proof of a collection.
+	if collectRemote then
+		-- The server checks distance, so stand next to the candy before asking for it.
+		teleportTo(position + CANDY_HOVER)
 		task.wait(Config.arriveDelay)
-		local pad = getDropOffPad()
-		if sendPickup(candy.instance, pad or candy.instance) then
-			-- Give the server a moment to remove the candy before judging the result.
+
+		for attempt = 1, Config.pickupAttempts do
+			fireRemote(collectRemote, candy.instance)
 			task.wait(Config.probeDelay)
 			if not candy.instance.Parent then
-				stats.collected = stats.collected + 1
-				finishCycle(startedAt, Config.cycleLength)
-				return
-			end
-		end
-
-		-- Remote did not collect it; stop trusting it and let the other paths try.
-		pickup.remote = nil
-		print("[farm] pickup remote stopped collecting, falling back")
-	end
-
-	-- Prompt path: stand inside activation range, fire, and confirm the candy left.
-	local prompt = preparePromptPickup(candy.instance, position)
-	if prompt then
-		local collected = false
-		for attempt = 1, Config.pickupAttempts do
-			if firePrompt(prompt) and not candy.instance.Parent then
-				collected = true
 				break
 			end
-			-- Re-seat before retrying; the prompt range is tight and the camera angle matters.
-			local anchor = prompt.Parent
-			if anchor and anchor:IsA("BasePart") then
-				teleportTo(anchor.Position + Vector3.new(0, 1, 0))
-			end
-			task.wait(Config.arriveDelay)
 		end
 
-		if collected then
+		if not candy.instance.Parent then
 			stats.collected = stats.collected + 1
+
+			if depositRemote then
+				local padPosition = getWorldPosition(getDropOffPad())
+				if padPosition then
+					teleportTo(padPosition + PAD_HOVER)
+					task.wait(Config.arriveDelay)
+					fireRemote(depositRemote)
+					task.wait(Config.probeDelay)
+				end
+			end
+
 			finishCycle(startedAt, Config.cycleLength)
 			return
 		end
+
+		print("[farm] " .. COLLECT_REMOTE .. " did not collect, trying key")
 	end
 
 	-- Key fallback: sit next to the candy and tap the pickup key until it registers.
@@ -449,7 +285,6 @@ local function runCandyCycle(candy, position)
 	end
 
 	stats.collected = stats.collected + 1
-	task.wait(Config.afterPickupDelay)
 
 	local padPosition = getWorldPosition(getDropOffPad())
 	if padPosition then
@@ -460,20 +295,25 @@ local function runCandyCycle(candy, position)
 	finishCycle(startedAt, Config.cycleLength)
 end
 
--- Start remote discovery in background
+-- Resolve the candy remotes once, waiting briefly for them to stream in.
 task.spawn(function()
-	local candidates = getCandidates()
-	pickup.candidates = #candidates
+	local deadline = os.clock() + 20
+	repeat
+		pickup.collect, pickup.deposit = resolveRemotes()
+		if not pickup.collect then
+			task.wait(1)
+		end
+	until pickup.collect or os.clock() > deadline
 
-	local remote, shape = discoverPickupRemote(candidates)
-	if remote then
-		pickup.remote = remote
-		pickup.shape = shape
-		pickup.scanned = 1
-		print("[farm] pickup remote:", remote:GetFullName(), shape)
+	if pickup.collect then
+		print("[farm] collect remote:", pickup.collect:GetFullName())
+		if pickup.deposit then
+			print("[farm] deposit remote:", pickup.deposit:GetFullName())
+		else
+			print("[farm] no deposit remote found")
+		end
 	else
-		pickup.scanned = #candidates
-		print("[farm] no pickup remote found, falling back to teleport + key")
+		print("[farm] no " .. COLLECT_REMOTE .. " remote found, using teleport + key")
 	end
 end)
 
@@ -1188,4 +1028,4 @@ task.spawn(function()
 	end
 end)
 
-print(("[CandyFarm] Panel ready. Probing %d keyword names for a pickup remote."):format(#Config.discoverKeywords))
+print(("[CandyFarm] Panel ready. Looking for the %s remote."):format(COLLECT_REMOTE))
